@@ -796,7 +796,7 @@
         ];
 
         const scheduleTypes = ['심사', '해외출장', '휴가', '기타', '사외방문', '공휴일', '지도'];
-        const fileCategories = ['전체', '표준규격', '업무매뉴얼', '양식', '기타'];
+        const fileCategories = ['전체', '표준규격', '양식', '기타'];
 
         const initialFiles = [
             {
@@ -1183,7 +1183,7 @@
                             className={`tab ${activeTab === 'files' ? 'active' : ''}`}
                             onClick={() => setActiveTab('files')}
                         >
-                            📁 표준규격 & 파일
+                            📁 파일 관리
                         </button>
                         <button 
                             className={`tab ${activeTab === 'password' ? 'active' : ''}`}
@@ -1845,16 +1845,19 @@
             return (
                 <>
                     <div className="file-section">
-                        <h2>📁 파일 업로드</h2>
+                        <h2>🔗 파일 링크 등록</h2>
                         <div 
                             className={`upload-area ${isDragging ? 'dragover' : ''}`}
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
                         >
-                            <div style={{fontSize: '48px', marginBottom: '10px'}}>📤</div>
-                            <p style={{marginBottom: '15px', color: '#7f8c8d'}}>
-                                파일을 드래그하거나 클릭하여 업로드
+                            <div style={{fontSize: '48px', marginBottom: '10px'}}>🔗</div>
+                            <p style={{marginBottom: '5px', color: '#2c3e50', fontWeight: '600', fontSize: '15px'}}>
+                                Dropbox 파일 링크 등록
+                            </p>
+                            <p style={{marginBottom: '15px', color: '#7f8c8d', fontSize: '13px'}}>
+                                파일을 선택하고 Dropbox 링크를 입력하세요
                             </p>
                             <input
                                 ref={fileInputRef}
@@ -1866,7 +1869,7 @@
                                 className="upload-button"
                                 onClick={() => fileInputRef.current.click()}
                             >
-                                파일 선택
+                                파일 선택 (링크 등록)
                             </button>
                         </div>
                     </div>
@@ -2627,7 +2630,7 @@
                 <div className={`modal ${isOpen ? 'active' : ''}`} onClick={onClose}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            파일 업로드
+                            파일 링크 등록
                         </div>
                         
                         <div className="form-group">
@@ -2636,7 +2639,7 @@
                                 type="text" 
                                 value={customName}
                                 onChange={(e) => setCustomName(e.target.value)}
-                                placeholder="파일 제목을 입력하세요"
+                                placeholder="예: ISO_9001_표준규격"
                             />
                         </div>
 
@@ -2650,7 +2653,7 @@
                         </div>
 
                         <div className="form-group">
-                            <label>Dropbox 링크 * 🔗</label>
+                            <label>Dropbox 공유 링크 * 🔗</label>
                             <input 
                                 type="url" 
                                 value={dropboxLink}
@@ -2663,11 +2666,18 @@
                             />
                             <small style={{
                                 display: 'block',
-                                marginTop: '5px',
-                                color: '#7f8c8d',
-                                fontSize: '12px'
+                                marginTop: '8px',
+                                color: '#2c3e50',
+                                fontSize: '13px',
+                                lineHeight: '1.6',
+                                background: '#ecf0f1',
+                                padding: '10px',
+                                borderRadius: '4px'
                             }}>
-                                💡 Dropbox에서 파일 우클릭 → 공유 → 링크 복사
+                                <strong>📌 Dropbox 링크 가져오기:</strong><br/>
+                                1. Dropbox에서 파일 우클릭<br/>
+                                2. "공유" 또는 "Share" 클릭<br/>
+                                3. "링크 복사" 클릭 후 여기에 붙여넣기
                             </small>
                         </div>
 
@@ -2676,14 +2686,14 @@
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                placeholder="파일에 대한 설명을 입력하세요"
+                                placeholder="파일에 대한 간단한 설명 (선택사항)"
                                 rows="3"
                             />
                         </div>
 
                         <div className="modal-buttons">
                             <button className="btn-save" onClick={handleSave}>
-                                업로드
+                                등록
                             </button>
                             <button className="btn-cancel" onClick={onClose}>
                                 취소
