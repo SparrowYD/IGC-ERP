@@ -1252,6 +1252,7 @@
             const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
             const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
             const [selectedCell, setSelectedCell] = useState(null);
+            const [hoveredEmployee, setHoveredEmployee] = useState(null); // 호버된 직원
             const tableRef = useRef(null);
 
             // 드래그 스크롤 기능
@@ -1423,7 +1424,7 @@
                                         background: 'white'
                                     }}
                                 >
-                                    {Array.from({length: 11}, (_, i) => 2020 + i).map(year => (
+                                    {Array.from({length: 51}, (_, i) => 2020 + i).map(year => (
                                         <option key={year} value={year}>{year}년</option>
                                     ))}
                                 </select>
@@ -1483,7 +1484,14 @@
                             <tbody>
                                 {employees.map((employee, index) => (
                                     <tr key={employee.id}>
-                                        <td className="employee-name">
+                                        <td 
+                                            className="employee-name"
+                                            style={{
+                                                background: hoveredEmployee === employee.id ? '#3498db' : '#ecf0f1',
+                                                color: hoveredEmployee === employee.id ? 'white' : 'inherit',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                        >
                                             <div className="employee-info">
                                                 <div className="employee-name-section">
                                                     <span className="employee-name-text">{employee.name}</span>
@@ -1529,8 +1537,16 @@
                                                     key={day}
                                                     className={`day-cell ${isWeekendCell ? 'weekend' : ''} ${isTodayCell ? 'today' : ''}`}
                                                     onDoubleClick={() => handleCellClick(employee.id, day)}
-                                                    style={{cursor: 'pointer'}}
-                                                    title="더블클릭하여 일정 등록/수정"
+                                                    onMouseEnter={() => setHoveredEmployee(employee.id)}
+                                                    onMouseLeave={() => setHoveredEmployee(null)}
+                                                    style={{
+                                                        cursor: 'pointer',
+                                                        background: hoveredEmployee === employee.id 
+                                                            ? (isWeekendCell ? '#e8f4f8' : '#f0f8ff') 
+                                                            : undefined,
+                                                        transition: 'background 0.15s ease'
+                                                    }}
+                                                    title={`${employee.name} - ${day}일 (더블클릭하여 일정 등록/수정)`}
                                                 >
                                                     {schedule && (
                                                         <div className="schedule-content">
