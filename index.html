@@ -206,7 +206,7 @@
 
         .schedule-table th,
         .schedule-table td {
-            border: 1px solid #ddd;
+            border: 1px solid #333;
             padding: 8px;
             text-align: center;
             min-width: 140px; /* 셀 너비 증가 */
@@ -2329,7 +2329,7 @@
 
                     <div style={{
                         background: 'white',
-                        border: '2px solid #ddd',
+                        border: '2px solid #333',
                         borderRadius: '8px',
                         overflow: 'hidden',
                         marginBottom: '40px'
@@ -2340,13 +2340,13 @@
                         }}>
                             <thead>
                                 <tr style={{background: '#e67e22', color: 'white'}}>
-                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600'}}>
+                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600', borderRight: '1px solid #fff'}}>
                                         직원명
                                     </th>
-                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600'}}>
+                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600', borderRight: '1px solid #fff'}}>
                                         부서
                                     </th>
-                                    <th style={{padding: '15px', textAlign: 'center', fontSize: '15px', fontWeight: '600'}}>
+                                    <th style={{padding: '15px', textAlign: 'center', fontSize: '15px', fontWeight: '600', borderRight: '1px solid #fff'}}>
                                         현재 권한
                                     </th>
                                     <th style={{padding: '15px', textAlign: 'center', fontSize: '15px', fontWeight: '600'}}>
@@ -2357,16 +2357,16 @@
                             <tbody>
                                 {employees.map((emp, index) => (
                                     <tr key={emp.id} style={{
-                                        borderBottom: '1px solid #e0e0e0',
+                                        borderBottom: '1px solid #333',
                                         background: index % 2 === 0 ? '#f9f9f9' : 'white'
                                     }}>
-                                        <td style={{padding: '15px', fontSize: '14px', fontWeight: '600'}}>
+                                        <td style={{padding: '15px', fontSize: '14px', fontWeight: '600', borderRight: '1px solid #333'}}>
                                             {emp.name}
                                         </td>
-                                        <td style={{padding: '15px', fontSize: '14px', color: '#7f8c8d'}}>
+                                        <td style={{padding: '15px', fontSize: '14px', color: '#7f8c8d', borderRight: '1px solid #333'}}>
                                             {emp.department}
                                         </td>
-                                        <td style={{padding: '15px', textAlign: 'center'}}>
+                                        <td style={{padding: '15px', textAlign: 'center', borderRight: '1px solid #333'}}>
                                             <span style={{
                                                 padding: '6px 12px',
                                                 borderRadius: '4px',
@@ -2444,7 +2444,7 @@
 
                     <div style={{
                         background: 'white',
-                        border: '2px solid #ddd',
+                        border: '2px solid #333',
                         borderRadius: '8px',
                         overflow: 'hidden'
                     }}>
@@ -2454,10 +2454,10 @@
                         }}>
                             <thead>
                                 <tr style={{background: '#34495e', color: 'white'}}>
-                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600'}}>
+                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600', borderRight: '1px solid #fff'}}>
                                         직원명
                                     </th>
-                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600'}}>
+                                    <th style={{padding: '15px', textAlign: 'left', fontSize: '15px', fontWeight: '600', borderRight: '1px solid #fff'}}>
                                         부서
                                     </th>
                                     <th style={{padding: '15px', textAlign: 'center', fontSize: '15px', fontWeight: '600'}}>
@@ -2470,13 +2470,13 @@
                                     .filter(emp => emp.role !== 'admin') // 관리자는 제외 (기본적으로 모든 업무일지 조회 가능)
                                     .map((emp, index) => (
                                         <tr key={emp.id} style={{
-                                            borderBottom: '1px solid #e0e0e0',
+                                            borderBottom: '1px solid #333',
                                             background: index % 2 === 0 ? '#f9f9f9' : 'white'
                                         }}>
-                                            <td style={{padding: '15px', fontSize: '14px', fontWeight: '600'}}>
+                                            <td style={{padding: '15px', fontSize: '14px', fontWeight: '600', borderRight: '1px solid #333'}}>
                                                 {emp.name}
                                             </td>
-                                            <td style={{padding: '15px', fontSize: '14px', color: '#7f8c8d'}}>
+                                            <td style={{padding: '15px', fontSize: '14px', color: '#7f8c8d', borderRight: '1px solid #333'}}>
                                                 {emp.department}
                                             </td>
                                             <td style={{padding: '15px', textAlign: 'center'}}>
