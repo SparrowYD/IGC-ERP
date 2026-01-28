@@ -807,7 +807,8 @@
                 uploadDate: '2026-01-15',
                 uploadedBy: '공길택',
                 description: 'ISO 9001 품질경영시스템 표준',
-                type: 'pdf'
+                type: 'pdf',
+                dropboxLink: '' // Dropbox 링크 (나중에 추가)
             },
         ];
 
@@ -1690,7 +1691,7 @@
                 }
             };
 
-            const handleFileUpload = (customName, category, description) => {
+            const handleFileUpload = (customName, category, description, dropboxLink) => {
                 if (!pendingFile) return;
                 
                 const newFile = {
@@ -1701,7 +1702,8 @@
                     uploadDate: new Date().toISOString().split('T')[0],
                     uploadedBy: currentUser.name,
                     description: description || '',
-                    type: getFileType(pendingFile.name)
+                    type: getFileType(pendingFile.name),
+                    dropboxLink: dropboxLink || ''
                 };
                 setFiles(prev => [...prev, newFile]);
                 
@@ -1755,7 +1757,23 @@
             };
 
             const handleDownload = (file) => {
-                alert(`"${file.name}" 다운로드 시작`);
+                if (file.dropboxLink) {
+                    // Dropbox 링크를 다운로드 모드로 변환
+                    let downloadLink = file.dropboxLink;
+                    
+                    // Dropbox 공유 링크를 다운로드 링크로 변환
+                    // www.dropbox.com → dl.dropboxusercontent.com
+                    if (downloadLink.includes('dropbox.com')) {
+                        downloadLink = downloadLink.replace('www.dropbox.com', 'dl.dropboxusercontent.com');
+                        downloadLink = downloadLink.replace('?dl=0', '');
+                        downloadLink = downloadLink.replace('?dl=1', '');
+                    }
+                    
+                    // 새 탭에서 링크 열기
+                    window.open(file.dropboxLink, '_blank');
+                } else {
+                    alert('파일 링크가 없습니다. 파일을 다시 등록해주세요.');
+                }
             };
 
             const handleDelete = (fileId) => {
@@ -1834,6 +1852,18 @@
                                                     {file.size} · {file.uploadDate} · {file.uploadedBy}
                                                     {file.description && ` · ${file.description}`}
                                                 </div>
+                                                {file.dropboxLink && (
+                                                    <div style={{
+                                                        marginTop: '5px',
+                                                        fontSize: '11px',
+                                                        color: '#0061ff',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '4px'
+                                                    }}>
+                                                        🔗 Dropbox 링크 연결됨
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="file-actions">
@@ -2511,6 +2541,7 @@
             const [customName, setCustomName] = useState('');
             const [category, setCategory] = useState('기타');
             const [description, setDescription] = useState('');
+            const [dropboxLink, setDropboxLink] = useState('');
 
             useEffect(() => {
                 if (fileName) {
@@ -2523,11 +2554,16 @@
                     alert('파일 제목을 입력해주세요.');
                     return;
                 }
+                if (!dropboxLink.trim()) {
+                    alert('Dropbox 링크를 입력해주세요.');
+                    return;
+                }
                 const ext = fileName.match(/\.[^/.]+$/)?.[0] || '';
-                onSave(customName + ext, category, description);
+                onSave(customName + ext, category, description, dropboxLink);
                 setCustomName('');
                 setCategory('기타');
                 setDescription('');
+                setDropboxLink('');
             };
 
             return (
@@ -2554,6 +2590,28 @@
                                     <option key={cat} value={cat}>{cat}</option>
                                 ))}
                             </select>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Dropbox 링크 * 🔗</label>
+                            <input 
+                                type="url" 
+                                value={dropboxLink}
+                                onChange={(e) => setDropboxLink(e.target.value)}
+                                placeholder="https://www.dropbox.com/..."
+                                style={{
+                                    fontFamily: 'monospace',
+                                    fontSize: '13px'
+                                }}
+                            />
+                            <small style={{
+                                display: 'block',
+                                marginTop: '5px',
+                                color: '#7f8c8d',
+                                fontSize: '12px'
+                            }}>
+                                💡 Dropbox에서 파일 우클릭 → 공유 → 링크 복사
+                            </small>
                         </div>
 
                         <div className="form-group">
