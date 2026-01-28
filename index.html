@@ -1405,7 +1405,46 @@
                     <div className="schedule-controls">
                         <div className="month-selector">
                             <button onClick={prevMonth}>◀ 이전 달</button>
-                            <span>{currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월</span>
+                            <div style={{
+                                display: 'flex',
+                                gap: '8px',
+                                alignItems: 'center'
+                            }}>
+                                <select 
+                                    value={currentDate.getFullYear()}
+                                    onChange={(e) => setCurrentDate(new Date(parseInt(e.target.value), currentDate.getMonth(), 1))}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '15px',
+                                        fontWeight: '600',
+                                        border: '2px solid #3498db',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        background: 'white'
+                                    }}
+                                >
+                                    {Array.from({length: 11}, (_, i) => 2020 + i).map(year => (
+                                        <option key={year} value={year}>{year}년</option>
+                                    ))}
+                                </select>
+                                <select 
+                                    value={currentDate.getMonth()}
+                                    onChange={(e) => setCurrentDate(new Date(currentDate.getFullYear(), parseInt(e.target.value), 1))}
+                                    style={{
+                                        padding: '8px 12px',
+                                        fontSize: '15px',
+                                        fontWeight: '600',
+                                        border: '2px solid #3498db',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        background: 'white'
+                                    }}
+                                >
+                                    {Array.from({length: 12}, (_, i) => i).map(month => (
+                                        <option key={month} value={month}>{month + 1}월</option>
+                                    ))}
+                                </select>
+                            </div>
                             <button onClick={nextMonth}>다음 달 ▶</button>
                         </div>
 
