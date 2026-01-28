@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IGC인증원 ERP 통합 관리 시스템</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <!-- React -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -724,6 +730,22 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Firebase 초기화
+        const firebaseConfig = {
+            apiKey: "AIzaSyAjZ9TtLW2eP4sXbc6AddmnCssCgKJ7x7U",
+            authDomain: "igc-erp.firebaseapp.com",
+            projectId: "igc-erp",
+            storageBucket: "igc-erp.firebasestorage.app",
+            messagingSenderId: "571183927132",
+            appId: "1:571183927132:web:0d9faddb4cc311d886fb99"
+        };
+
+        // Firebase 앱 초기화
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
         const initialEmployees = [
             { id: 1, name: '공길택', department: '심사팀', role: 'user', password: '1234' },
             { id: 2, name: '김봉숙', department: '심사팀', role: 'user', password: '1234' },
@@ -792,22 +814,73 @@
         function Main() {
             const [currentUser, setCurrentUser] = useState(null);
             const [employees, setEmployees] = useState(initialEmployees);
+            const [isInitialized, setIsInitialized] = useState(false);
+
+            // Firestore에서 직원 데이터 불러오기 및 실시간 동기화
+            useEffect(() => {
+                const unsubscribe = db.collection('employees').onSnapshot((snapshot) => {
+                    if (snapshot.empty) {
+                        // 처음 사용 시 초기 데이터 저장
+                        initialEmployees.forEach(emp => {
+                            db.collection('employees').doc(emp.id.toString()).set(emp);
+                        });
+                        setEmployees(initialEmployees);
+                    } else {
+                        const employeesData = snapshot.docs.map(doc => ({
+                            id: parseInt(doc.id),
+                            ...doc.data()
+                        }));
+                        setEmployees(employeesData.sort((a, b) => a.id - b.id));
+                    }
+                    setIsInitialized(true);
+                });
+
+                return () => unsubscribe();
+            }, []);
 
             const updateEmployeePassword = (employeeId, newPassword) => {
-                setEmployees(employees.map(emp => 
+                const updatedEmployees = employees.map(emp => 
                     emp.id === employeeId ? { ...emp, password: newPassword } : emp
-                ));
+                );
+                setEmployees(updatedEmployees);
+                
+                // Firestore에 저장
+                db.collection('employees').doc(employeeId.toString()).update({
+                    password: newPassword
+                });
             };
 
             const updateEmployeeRole = (employeeId, newRole) => {
-                setEmployees(employees.map(emp => 
+                const updatedEmployees = employees.map(emp => 
                     emp.id === employeeId ? { ...emp, role: newRole } : emp
-                ));
+                );
+                setEmployees(updatedEmployees);
+                
+                // Firestore에 저장
+                db.collection('employees').doc(employeeId.toString()).update({
+                    role: newRole
+                });
+                
                 // 현재 로그인한 사용자의 권한이 변경된 경우 currentUser도 업데이트
                 if (currentUser && currentUser.id === employeeId) {
                     setCurrentUser({ ...currentUser, role: newRole });
                 }
             };
+
+            if (!isInitialized) {
+                return (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        minHeight: '100vh',
+                        fontSize: '18px',
+                        color: '#666'
+                    }}>
+                        🔄 시스템 로딩 중...
+                    </div>
+                );
+            }
 
             if (!currentUser) {
                 return <LoginScreen employees={employees} onLogin={setCurrentUser} />;
@@ -974,9 +1047,96 @@
         function ERPSystem({ currentUser, onLogout, employees, updateEmployeePassword, updateEmployeeRole }) {
             const [activeTab, setActiveTab] = useState('schedule');
             const [diaryPermissions, setDiaryPermissions] = useState({});
-            const [sharedSchedules, setSharedSchedules] = useState({}); // 모든 사용자가 공유하는 일정
-            const [sharedDiaries, setSharedDiaries] = useState({}); // 모든 사용자가 공유하는 업무일지
-            const [sharedFiles, setSharedFiles] = useState(initialFiles); // 모든 사용자가 공유하는 파일
+            const [sharedSchedules, setSharedSchedules] = useState({});
+            const [sharedDiaries, setSharedDiaries] = useState({});
+            const [sharedFiles, setSharedFiles] = useState(initialFiles);
+
+            // Firebase에서 일정 데이터 실시간 동기화
+            useEffect(() => {
+                const unsubscribe = db.collection('schedules').onSnapshot((snapshot) => {
+                    const schedulesData = {};
+                    snapshot.docs.forEach(doc => {
+                        schedulesData[doc.id] = doc.data();
+                    });
+                    setSharedSchedules(schedulesData);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Firebase에서 업무일지 데이터 실시간 동기화
+            useEffect(() => {
+                const unsubscribe = db.collection('diaries').onSnapshot((snapshot) => {
+                    const diariesData = {};
+                    snapshot.docs.forEach(doc => {
+                        diariesData[doc.id] = doc.data();
+                    });
+                    setSharedDiaries(diariesData);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Firebase에서 파일 데이터 실시간 동기화
+            useEffect(() => {
+                const unsubscribe = db.collection('files').onSnapshot((snapshot) => {
+                    if (snapshot.empty) {
+                        // 처음 사용 시 초기 파일 저장
+                        initialFiles.forEach(file => {
+                            db.collection('files').doc(file.id.toString()).set(file);
+                        });
+                        setSharedFiles(initialFiles);
+                    } else {
+                        const filesData = snapshot.docs.map(doc => ({
+                            id: parseInt(doc.id),
+                            ...doc.data()
+                        }));
+                        setSharedFiles(filesData.sort((a, b) => a.id - b.id));
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Firebase에서 권한 데이터 실시간 동기화
+            useEffect(() => {
+                const unsubscribe = db.collection('permissions').doc('diaryPermissions').onSnapshot((doc) => {
+                    if (doc.exists) {
+                        setDiaryPermissions(doc.data());
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 권한 변경 시 Firebase에 저장
+            const updateDiaryPermissions = (newPermissions) => {
+                setDiaryPermissions(newPermissions);
+                db.collection('permissions').doc('diaryPermissions').set(newPermissions);
+            };
+
+            // 일정 변경 시 Firebase에 저장
+            const updateSharedSchedules = (newSchedules) => {
+                setSharedSchedules(newSchedules);
+                // Firestore 업데이트
+                Object.keys(newSchedules).forEach(key => {
+                    db.collection('schedules').doc(key).set(newSchedules[key]);
+                });
+            };
+
+            // 업무일지 변경 시 Firebase에 저장
+            const updateSharedDiaries = (newDiaries) => {
+                setSharedDiaries(newDiaries);
+                // Firestore 업데이트
+                Object.keys(newDiaries).forEach(key => {
+                    db.collection('diaries').doc(key).set(newDiaries[key]);
+                });
+            };
+
+            // 파일 변경 시 Firebase에 저장
+            const updateSharedFiles = (newFiles) => {
+                setSharedFiles(newFiles);
+                // Firestore 업데이트
+                newFiles.forEach(file => {
+                    db.collection('files').doc(file.id.toString()).set(file);
+                });
+            };
 
             return (
                 <div className="container">
@@ -1073,7 +1233,7 @@
                         {activeTab === 'permissions' && currentUser.role === 'admin' && (
                             <PermissionsTab 
                                 diaryPermissions={diaryPermissions} 
-                                setDiaryPermissions={setDiaryPermissions}
+                                setDiaryPermissions={updateDiaryPermissions}
                                 employees={employees}
                                 updateEmployeeRole={updateEmployeeRole}
                             />
@@ -1183,6 +1343,10 @@
                 const newSchedules = { ...schedules };
                 newSchedules[selectedCell.key] = { type, memo };
                 setSchedules(newSchedules);
+                
+                // Firebase에 저장
+                db.collection('schedules').doc(selectedCell.key).set({ type, memo });
+                
                 setScheduleModalOpen(false);
                 setSelectedCell(null);
             };
@@ -1192,6 +1356,10 @@
                 const newSchedules = { ...schedules };
                 delete newSchedules[selectedCell.key];
                 setSchedules(newSchedules);
+                
+                // Firebase에서 삭제
+                db.collection('schedules').doc(selectedCell.key).delete();
+                
                 setScheduleModalOpen(false);
                 setSelectedCell(null);
             };
@@ -1536,6 +1704,10 @@
                     type: getFileType(pendingFile.name)
                 };
                 setFiles(prev => [...prev, newFile]);
+                
+                // Firebase에 저장
+                db.collection('files').doc(newFile.id.toString()).set(newFile);
+                
                 setPendingFile(null);
                 setUploadModalOpen(false);
             };
@@ -1589,6 +1761,9 @@
             const handleDelete = (fileId) => {
                 if (confirm('정말 이 파일을 삭제하시겠습니까?')) {
                     setFiles(files.filter(f => f.id !== fileId));
+                    
+                    // Firebase에서 삭제
+                    db.collection('files').doc(fileId.toString()).delete();
                 }
             };
 
@@ -1726,15 +1901,21 @@
                 const now = new Date();
                 const savedAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
                 
+                const diaryData = {
+                    content: currentDiary,
+                    savedAt: savedAt,
+                    employeeId: selectedEmployee.id,
+                    employeeName: selectedEmployee.name
+                };
+                
                 setDiaries({
                     ...diaries,
-                    [diaryKey]: {
-                        content: currentDiary,
-                        savedAt: savedAt,
-                        employeeId: selectedEmployee.id,
-                        employeeName: selectedEmployee.name
-                    }
+                    [diaryKey]: diaryData
                 });
+                
+                // Firebase에 저장
+                db.collection('diaries').doc(diaryKey).set(diaryData);
+                
                 setLastSaved(savedAt);
                 alert('업무일지가 저장되었습니다.');
             };
