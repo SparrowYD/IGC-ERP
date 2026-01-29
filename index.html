@@ -3194,27 +3194,57 @@
         }
 
         function DiaryTab({ currentUser, diaryPermissions, sharedDiaries, setSharedDiaries }) {
-            const diaries = sharedDiaries; // 공유 업무일지 사용
-            const setDiaries = setSharedDiaries; // 공유 업무일지 setter 사용
+            const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
             const [selectedEmployee, setSelectedEmployee] = useState(currentUser);
             const [currentDiary, setCurrentDiary] = useState('');
             const [lastSaved, setLastSaved] = useState(null);
+            const [diaryList, setDiaryList] = useState([]);
 
-            const today = new Date().toISOString().split('T')[0];
-            const diaryKey = `${selectedEmployee.id}-${today}`;
+            const diaryKey = `${selectedEmployee.id}-${selectedDate}`;
 
+            // 선택한 직원의 모든 일지 목록 로드
             useEffect(() => {
-                // 해당 직원의 오늘 일지 불러오기
-                if (diaries[diaryKey]) {
-                    setCurrentDiary(diaries[diaryKey].content);
-                    setLastSaved(diaries[diaryKey].savedAt);
-                } else {
-                    setCurrentDiary('');
-                    setLastSaved(null);
-                }
-            }, [selectedEmployee, diaryKey, diaries]);
+                if (!selectedEmployee) return;
+                
+                db.collection('diaries')
+                    .where('employeeId', '==', selectedEmployee.id)
+                    .onSnapshot(snapshot => {
+                        const list = [];
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            const dateMatch = doc.id.match(/-(\\d{4}-\\d{2}-\\d{2})$/);
+                            if (dateMatch) {
+                                list.push({
+                                    date: dateMatch[1],
+                                    ...data
+                                });
+                            }
+                        });
+                        list.sort((a, b) => b.date.localeCompare(a.date));
+                        setDiaryList(list);
+                    });
+            }, [selectedEmployee]);
+
+            // 선택한 날짜의 일지 로드
+            useEffect(() => {
+                db.collection('diaries').doc(diaryKey).get().then(doc => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        setCurrentDiary(data.content || '');
+                        setLastSaved(data.savedAt || null);
+                    } else {
+                        setCurrentDiary('');
+                        setLastSaved(null);
+                    }
+                });
+            }, [diaryKey]);
 
             const handleSave = () => {
+                if (!currentDiary.trim()) {
+                    alert('업무 내용을 입력해주세요.');
+                    return;
+                }
+
                 const now = new Date();
                 const savedAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
                 
@@ -3222,54 +3252,50 @@
                     content: currentDiary,
                     savedAt: savedAt,
                     employeeId: selectedEmployee.id,
-                    employeeName: selectedEmployee.name
+                    employeeName: selectedEmployee.name,
+                    date: selectedDate
                 };
                 
-                setDiaries({
-                    ...diaries,
-                    [diaryKey]: diaryData
+                db.collection('diaries').doc(diaryKey).set(diaryData).then(() => {
+                    setLastSaved(savedAt);
+                    alert('업무일지가 저장되었습니다.');
                 });
-                
-                // Firebase에 저장
-                db.collection('diaries').doc(diaryKey).set(diaryData);
-                
-                setLastSaved(savedAt);
-                alert('업무일지가 저장되었습니다.');
             };
 
-            // 관리자이거나 업무일지 조회 권한이 있는 경우 직원 선택 가능
+            const handleDelete = () => {
+                if (!lastSaved) {
+                    alert('저장된 일지가 없습니다.');
+                    return;
+                }
+                
+                if (confirm(`${selectedDate} 일지를 삭제하시겠습니까?`)) {
+                    db.collection('diaries').doc(diaryKey).delete().then(() => {
+                        setCurrentDiary('');
+                        setLastSaved(null);
+                        alert('업무일지가 삭제되었습니다.');
+                    });
+                }
+            };
+
             const hasViewPermission = diaryPermissions[currentUser.id] === true;
             const canSelectEmployee = currentUser.role === 'admin' || hasViewPermission;
 
             return (
-                <div style={{padding: '20px'}}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '20px',
-                        flexWrap: 'wrap',
-                        gap: '15px'
-                    }}>
-                        <h2 style={{margin: 0, color: '#2c3e50'}}>
-                            📝 업무일지 - {today}
-                        </h2>
+                <div style={{padding: '20px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: '20px'}}>
+                    {/* 좌측: 일지 목록 */}
+                    <div style={{background: 'white', border: '2px solid #ddd', borderRadius: '8px', padding: '20px', height: 'fit-content'}}>
+                        <h3 style={{marginTop: 0, marginBottom: '15px', color: '#2c3e50'}}>📅 일지 목록</h3>
                         
                         {canSelectEmployee && (
-                            <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                                <label style={{fontWeight: '600'}}>직원 선택:</label>
+                            <div style={{marginBottom: '15px'}}>
+                                <label style={{display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px'}}>직원 선택</label>
                                 <select
                                     value={selectedEmployee.id}
                                     onChange={(e) => {
                                         const emp = initialEmployees.find(emp => emp.id === parseInt(e.target.value));
                                         setSelectedEmployee(emp);
                                     }}
-                                    style={{
-                                        padding: '8px 12px',
-                                        border: '2px solid #ddd',
-                                        borderRadius: '4px',
-                                        fontSize: '14px'
-                                    }}
+                                    style={{width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px'}}
                                 >
                                     {initialEmployees.map(emp => (
                                         <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -3277,43 +3303,72 @@
                                 </select>
                             </div>
                         )}
+                        
+                        <div style={{marginBottom: '15px'}}>
+                            <label style={{display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '13px'}}>날짜 선택</label>
+                            <input
+                                type="date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                style={{width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px'}}
+                            />
+                        </div>
+
+                        <div style={{borderTop: '1px solid #ddd', paddingTop: '15px'}}>
+                            <h4 style={{marginTop: 0, marginBottom: '10px', fontSize: '14px', color: '#7f8c8d'}}>
+                                {selectedEmployee.name}님의 일지 ({diaryList.length}개)
+                            </h4>
+                            <div style={{maxHeight: '400px', overflowY: 'auto'}}>
+                                {diaryList.length === 0 ? (
+                                    <div style={{textAlign: 'center', padding: '20px', color: '#95a5a6', fontSize: '13px'}}>
+                                        작성된 일지가 없습니다.
+                                    </div>
+                                ) : (
+                                    diaryList.map((diary, idx) => (
+                                        <div
+                                            key={idx}
+                                            onClick={() => setSelectedDate(diary.date)}
+                                            style={{
+                                                padding: '10px',
+                                                margin: '5px 0',
+                                                background: selectedDate === diary.date ? '#e3f2fd' : '#f8f9fa',
+                                                border: selectedDate === diary.date ? '2px solid #3498db' : '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (selectedDate !== diary.date) {
+                                                    e.currentTarget.style.background = '#e8f5e9';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (selectedDate !== diary.date) {
+                                                    e.currentTarget.style.background = '#f8f9fa';
+                                                }
+                                            }}
+                                        >
+                                            <div style={{fontSize: '14px', fontWeight: '600', marginBottom: '3px'}}>
+                                                {diary.date}
+                                            </div>
+                                            <div style={{fontSize: '12px', color: '#7f8c8d'}}>
+                                                {diary.savedAt}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
                     </div>
 
-                    {!canSelectEmployee && selectedEmployee.id !== currentUser.id && (
-                        <div style={{
-                            padding: '20px',
-                            background: '#fee',
-                            color: '#c00',
-                            borderRadius: '6px',
-                            marginBottom: '20px',
-                            textAlign: 'center'
-                        }}>
-                            다른 직원의 업무일지는 볼 수 없습니다.
-                        </div>
-                    )}
-
-                    <div style={{
-                        background: 'white',
-                        border: '2px solid #ddd',
-                        borderRadius: '8px',
-                        padding: '20px'
-                    }}>
-                        <div style={{
-                            marginBottom: '15px',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            flexWrap: 'wrap'
-                        }}>
+                    {/* 우측: 일지 작성 */}
+                    <div style={{background: 'white', border: '2px solid #ddd', borderRadius: '8px', padding: '20px'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
                             <h3 style={{margin: 0, color: '#34495e'}}>
-                                {selectedEmployee.name}님의 업무일지
+                                📝 {selectedEmployee.name}님의 업무일지 - {selectedDate}
                             </h3>
                             {lastSaved && (
-                                <span style={{
-                                    fontSize: '13px',
-                                    color: '#27ae60',
-                                    fontWeight: '600'
-                                }}>
+                                <span style={{fontSize: '13px', color: '#27ae60', fontWeight: '600'}}>
                                     마지막 저장: {lastSaved}
                                 </span>
                             )}
@@ -3322,25 +3377,38 @@
                         <textarea
                             value={currentDiary}
                             onChange={(e) => setCurrentDiary(e.target.value)}
-                            placeholder="오늘의 업무 내용을 작성하세요..."
+                            placeholder="업무 내용을 작성하세요..."
                             style={{
                                 width: '100%',
-                                minHeight: '400px',
+                                minHeight: '500px',
                                 padding: '15px',
                                 border: '1px solid #ddd',
                                 borderRadius: '6px',
                                 fontSize: '14px',
                                 fontFamily: 'inherit',
-                                lineHeight: '1.6',
+                                lineHeight: '1.8',
                                 resize: 'vertical'
                             }}
                         />
 
-                        <div style={{
-                            marginTop: '20px',
-                            display: 'flex',
-                            justifyContent: 'flex-end'
-                        }}>
+                        <div style={{marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+                            {lastSaved && (
+                                <button
+                                    onClick={handleDelete}
+                                    style={{
+                                        padding: '12px 30px',
+                                        background: '#e74c3c',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        fontSize: '15px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    삭제
+                                </button>
+                            )}
                             <button
                                 onClick={handleSave}
                                 style={{
@@ -3349,231 +3417,32 @@
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '6px',
-                                    fontSize: '16px',
+                                    fontSize: '15px',
                                     fontWeight: '600',
-                                    cursor: 'pointer',
-                                    transition: 'background 0.2s'
+                                    cursor: 'pointer'
                                 }}
-                                onMouseOver={(e) => e.target.style.background = '#2980b9'}
-                                onMouseOut={(e) => e.target.style.background = '#3498db'}
                             >
-                                Save
+                                저장
                             </button>
                         </div>
-                    </div>
-                </div>
-            );
-        }
 
-        function PasswordChangeTab({ currentUser, employees, updateEmployeePassword }) {
-            const [currentPassword, setCurrentPassword] = useState('');
-            const [newPassword, setNewPassword] = useState('');
-            const [confirmPassword, setConfirmPassword] = useState('');
-            const [message, setMessage] = useState({ type: '', text: '' });
-
-            const handlePasswordChange = () => {
-                // 입력값 검증
-                if (!currentPassword || !newPassword || !confirmPassword) {
-                    setMessage({ type: 'error', text: '모든 필드를 입력해주세요.' });
-                    return;
-                }
-
-                // 현재 비밀번호 확인
-                const employee = employees.find(emp => emp.id === currentUser.id);
-                if (employee.password !== currentPassword) {
-                    setMessage({ type: 'error', text: '현재 비밀번호가 일치하지 않습니다.' });
-                    return;
-                }
-
-                // 새 비밀번호 확인
-                if (newPassword.length < 4) {
-                    setMessage({ type: 'error', text: '새 비밀번호는 최소 4자 이상이어야 합니다.' });
-                    return;
-                }
-
-                // 비밀번호 확인 일치 여부
-                if (newPassword !== confirmPassword) {
-                    setMessage({ type: 'error', text: '새 비밀번호가 일치하지 않습니다.' });
-                    return;
-                }
-
-                // 비밀번호 변경
-                updateEmployeePassword(currentUser.id, newPassword);
-                setMessage({ type: 'success', text: '✓ 비밀번호가 성공적으로 변경되었습니다!' });
-                
-                // 입력 필드 초기화
-                setCurrentPassword('');
-                setNewPassword('');
-                setConfirmPassword('');
-            };
-
-            return (
-                <div style={{padding: '20px', maxWidth: '600px', margin: '0 auto'}}>
-                    <h2 style={{marginBottom: '10px', color: '#2c3e50'}}>
-                        🔑 비밀번호 변경
-                    </h2>
-                    <p style={{marginBottom: '30px', color: '#7f8c8d', fontSize: '14px'}}>
-                        보안을 위해 초기 비밀번호를 변경해주세요.
-                    </p>
-
-                    <div style={{
-                        background: 'white',
-                        border: '2px solid #ddd',
-                        borderRadius: '8px',
-                        padding: '30px'
-                    }}>
-                        <div style={{marginBottom: '20px'}}>
-                            <label style={{
-                                display: 'block',
-                                marginBottom: '8px',
-                                fontWeight: '600',
-                                color: '#2c3e50',
-                                fontSize: '14px'
-                            }}>
-                                현재 비밀번호 *
-                            </label>
-                            <input
-                                type="password"
-                                value={currentPassword}
-                                onChange={(e) => {
-                                    setCurrentPassword(e.target.value);
-                                    setMessage({ type: '', text: '' });
-                                }}
-                                placeholder="현재 비밀번호를 입력하세요"
-                                style={{
-                                    width: '100%',
-                                    padding: '12px',
-                                    border: '2px solid #e0e0e0',
-                                    borderRadius: '6px',
-                                    fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-
-                        <div style={{marginBottom: '20px'}}>
-                            <label style={{
-                                display: 'block',
-                                marginBottom: '8px',
-                                fontWeight: '600',
-                                color: '#2c3e50',
-                                fontSize: '14px'
-                            }}>
-                                새 비밀번호 *
-                            </label>
-                            <input
-                                type="password"
-                                value={newPassword}
-                                onChange={(e) => {
-                                    setNewPassword(e.target.value);
-                                    setMessage({ type: '', text: '' });
-                                }}
-                                placeholder="새 비밀번호를 입력하세요 (최소 4자)"
-                                style={{
-                                    width: '100%',
-                                    padding: '12px',
-                                    border: '2px solid #e0e0e0',
-                                    borderRadius: '6px',
-                                    fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-
-                        <div style={{marginBottom: '25px'}}>
-                            <label style={{
-                                display: 'block',
-                                marginBottom: '8px',
-                                fontWeight: '600',
-                                color: '#2c3e50',
-                                fontSize: '14px'
-                            }}>
-                                새 비밀번호 확인 *
-                            </label>
-                            <input
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => {
-                                    setConfirmPassword(e.target.value);
-                                    setMessage({ type: '', text: '' });
-                                }}
-                                onKeyPress={(e) => {
-                                    if (e.key === 'Enter') handlePasswordChange();
-                                }}
-                                placeholder="새 비밀번호를 다시 입력하세요"
-                                style={{
-                                    width: '100%',
-                                    padding: '12px',
-                                    border: '2px solid #e0e0e0',
-                                    borderRadius: '6px',
-                                    fontSize: '14px',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-
-                        {message.text && (
+                        {!canSelectEmployee && (
                             <div style={{
-                                padding: '12px',
-                                background: message.type === 'success' ? '#d4edda' : '#f8d7da',
-                                color: message.type === 'success' ? '#155724' : '#721c24',
-                                border: `1px solid ${message.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
+                                marginTop: '20px',
+                                padding: '15px',
+                                background: '#fff3cd',
                                 borderRadius: '6px',
-                                marginBottom: '20px',
+                                border: '1px solid #ffc107',
                                 fontSize: '14px',
-                                textAlign: 'center',
-                                fontWeight: '600'
+                                color: '#856404'
                             }}>
-                                {message.text}
+                                💡 다른 직원의 업무일지를 보려면 관리자에게 권한을 요청하세요.
                             </div>
                         )}
-
-                        <button
-                            onClick={handlePasswordChange}
-                            style={{
-                                width: '100%',
-                                padding: '14px',
-                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
-                                fontSize: '16px',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                transition: 'transform 0.2s'
-                            }}
-                            onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
-                            onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
-                        >
-                            비밀번호 변경
-                        </button>
-                    </div>
-
-                    <div style={{
-                        marginTop: '20px',
-                        padding: '15px',
-                        background: '#fff3cd',
-                        borderRadius: '6px',
-                        border: '1px solid #ffc107'
-                    }}>
-                        <h4 style={{margin: '0 0 10px 0', color: '#856404'}}>⚠️ 비밀번호 변경 안내</h4>
-                        <ul style={{
-                            margin: 0,
-                            paddingLeft: '20px',
-                            color: '#856404',
-                            fontSize: '13px',
-                            lineHeight: '1.8'
-                        }}>
-                            <li>초기 비밀번호는 <strong>1234</strong>입니다.</li>
-                            <li>비밀번호는 최소 4자 이상이어야 합니다.</li>
-                            <li>보안을 위해 정기적으로 비밀번호를 변경하세요.</li>
-                            <li>비밀번호는 안전하게 보관하세요.</li>
-                        </ul>
                     </div>
                 </div>
             );
         }
-
 
         function AccountingTab() {
             const [accounts, setAccounts] = useState([]);
@@ -3664,7 +3533,8 @@
                         return customer.includes(keyword) || description.includes(keyword);
                     });
                 }
-                filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
+                // 입력 순서대로 정렬 (timestamp 오름차순)
+                filtered.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                 let balance = 0;
                 const withBalance = filtered.map(t => {
                     balance = balance + (t.income || 0) - (t.expense || 0);
