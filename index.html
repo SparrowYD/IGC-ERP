@@ -1430,6 +1430,25 @@
                                     ))}
                                 </select>
                             </div>
+
+                            <div>
+                                <label style={{display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50'}}>
+                                    키워드
+                                </label>
+                                <input
+                                    type="text"
+                                    value={searchKeyword}
+                                    onChange={(e) => setSearchKeyword(e.target.value)}
+                                    placeholder="메모 내용 검색..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '2px solid #ddd',
+                                        borderRadius: '6px',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
                         </div>
 
                         <button
@@ -1615,43 +1634,81 @@
             };
 
             const handleCellClick = (employeeId, day) => {
-                // 모든 직원이 모든 일정을 수정할 수 있음
                 const key = `${employeeId}-${currentDate.getFullYear()}-${currentDate.getMonth()}-${day}`;
+                const existingSchedules = schedules[key] || [];
                 setSelectedCell({
                     employeeId,
                     day,
                     year: currentDate.getFullYear(),
                     month: currentDate.getMonth(),
                     key,
-                    existing: schedules[key] || null
+                    existing: Array.isArray(existingSchedules) ? existingSchedules : (existingSchedules ? [existingSchedules] : [])
                 });
                 setScheduleModalOpen(true);
             };
 
-            const saveSchedule = (type, memo, address, contact) => {
+            const saveSchedule = (type, memo, address, contact, scheduleIndex = null) => {
                 if (!selectedCell) return;
                 const newSchedules = { ...schedules };
-                newSchedules[selectedCell.key] = { type, memo, address, contact };
+                const currentSchedules = Array.isArray(newSchedules[selectedCell.key]) 
+                    ? [...newSchedules[selectedCell.key]] 
+                    : (newSchedules[selectedCell.key] ? [newSchedules[selectedCell.key]] : []);
+                
+                const newSchedule = { type, memo, address, contact };
+                
+                if (scheduleIndex !== null && scheduleIndex >= 0) {
+                    currentSchedules[scheduleIndex] = newSchedule;
+                } else {
+                    currentSchedules.push(newSchedule);
+                }
+                
+                newSchedules[selectedCell.key] = currentSchedules;
                 setSchedules(newSchedules);
                 
-                // Firebase에 저장
-                db.collection('schedules').doc(selectedCell.key).set({ type, memo, address, contact });
+                db.collection('schedules').doc(selectedCell.key).set(currentSchedules);
                 
                 setScheduleModalOpen(false);
                 setSelectedCell(null);
             };
 
-            const deleteSchedule = () => {
+            const deleteSchedule = (scheduleIndex = null) => {
                 if (!selectedCell) return;
                 const newSchedules = { ...schedules };
-                delete newSchedules[selectedCell.key];
-                setSchedules(newSchedules);
+                const currentSchedules = Array.isArray(newSchedules[selectedCell.key]) 
+                    ? [...newSchedules[selectedCell.key]] 
+                    : (newSchedules[selectedCell.key] ? [newSchedules[selectedCell.key]] : []);
                 
-                // Firebase에서 삭제
-                db.collection('schedules').doc(selectedCell.key).delete();
-                
-                setScheduleModalOpen(false);
-                setSelectedCell(null);
+                if (scheduleIndex !== null && scheduleIndex >= 0) {
+                    // 특정 일정만 삭제
+                    currentSchedules.splice(scheduleIndex, 1);
+                    if (currentSchedules.length === 0) {
+                        // 마지막 일정 삭제
+                        delete newSchedules[selectedCell.key];
+                        db.collection('schedules').doc(selectedCell.key).delete().then(() => {
+                            setSchedules(newSchedules);
+                            setScheduleModalOpen(false);
+                            setSelectedCell(null);
+                        });
+                    } else {
+                        // 남은 일정이 있음
+                        newSchedules[selectedCell.key] = currentSchedules;
+                        db.collection('schedules').doc(selectedCell.key).set(currentSchedules).then(() => {
+                            setSchedules(newSchedules);
+                            setSelectedCell({
+                                ...selectedCell,
+                                existing: currentSchedules
+                            });
+                        });
+                    }
+                } else {
+                    // 전체 삭제
+                    delete newSchedules[selectedCell.key];
+                    db.collection('schedules').doc(selectedCell.key).delete().then(() => {
+                        setSchedules(newSchedules);
+                        setScheduleModalOpen(false);
+                        setSelectedCell(null);
+                    });
+                }
             };
 
             const addEmployee = (newEmployee) => {
@@ -1845,18 +1902,26 @@
                                                     }}
                                                     title={`${employee.name} - ${day}일 (더블클릭하여 일정 등록/수정)`}
                                                 >
-                                                    {schedule && (
-                                                        <div className="schedule-content">
-                                                            <span className={`schedule-badge schedule-${schedule.type}`}>
-                                                                {schedule.type}
-                                                            </span>
-                                                            {schedule.memo && (
-                                                                <div className="schedule-memo">
-                                                                    {schedule.memo}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
+                                                    {(() => {
+                                                        const scheduleData = schedule;
+                                                        const scheduleArray = Array.isArray(scheduleData) ? scheduleData : (scheduleData ? [scheduleData] : []);
+                                                        return scheduleArray.length > 0 && (
+                                                            <div className="schedule-content">
+                                                                {scheduleArray.map((sch, idx) => (
+                                                                    <div key={idx} style={{marginBottom: idx < scheduleArray.length - 1 ? '4px' : '0'}}>
+                                                                        <span className={`schedule-badge schedule-${sch.type}`}>
+                                                                            {sch.type}
+                                                                        </span>
+                                                                        {sch.memo && (
+                                                                            <div className="schedule-memo">
+                                                                                {sch.memo}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                             );
                                         })}
@@ -1907,13 +1972,18 @@
             const [showAllEmployees, setShowAllEmployees] = useState(false);
             const [sameScheduleEmployees, setSameScheduleEmployees] = useState([]);
             const [endDay, setEndDay] = useState(null);
+            const [selectedScheduleIndex, setSelectedScheduleIndex] = useState(null);
+            const [isNewSchedule, setIsNewSchedule] = useState(true);
 
             useEffect(() => {
-                if (selectedCell?.existing) {
-                    setScheduleType(selectedCell.existing.type);
-                    setMemo(selectedCell.existing.memo || '');
-                    setAddress(selectedCell.existing.address || '');
-                    setContact(selectedCell.existing.contact || '');
+                if (selectedCell?.existing && selectedCell.existing.length > 0) {
+                    setIsNewSchedule(false);
+                    setSelectedScheduleIndex(0);
+                    const firstSchedule = selectedCell.existing[0];
+                    setScheduleType(firstSchedule.type);
+                    setMemo(firstSchedule.memo || '');
+                    setAddress(firstSchedule.address || '');
+                    setContact(firstSchedule.contact || '');
                     setAdditionalEmployees([]);
                     
                     // 같은 날짜, 같은 일정 종류, 같은 메모를 가진 직원 찾기
@@ -1934,7 +2004,10 @@
                         }
                     });
                     setSameScheduleEmployees(sameSchedule);
+                    setSameScheduleEmployees([]);
                 } else {
+                    setIsNewSchedule(true);
+                    setSelectedScheduleIndex(null);
                     setScheduleType('심사');
                     setMemo('');
                     setAddress('');
@@ -1944,6 +2017,27 @@
                     setEndDay(selectedCell?.day || null);
                 }
             }, [selectedCell, sharedSchedules, employees]);
+            
+            const loadSchedule = (index) => {
+                if (selectedCell?.existing && selectedCell.existing[index]) {
+                    const sch = selectedCell.existing[index];
+                    setScheduleType(sch.type);
+                    setMemo(sch.memo || '');
+                    setAddress(sch.address || '');
+                    setContact(sch.contact || '');
+                    setSelectedScheduleIndex(index);
+                    setIsNewSchedule(false);
+                }
+            };
+            
+            const addNewSchedule = () => {
+                setScheduleType('심사');
+                setMemo('');
+                setAddress('');
+                setContact('');
+                setSelectedScheduleIndex(null);
+                setIsNewSchedule(true);
+            };
 
             if (!selectedCell) return null;
 
@@ -1989,10 +2083,13 @@
                     return;
                 }
                 
-                // 기존 일정 수정
-                if (selectedCell.existing) {
-                    onSave(scheduleType, memo, address, contact);
-                    onClose();
+                // 기존 일정 수정 또는 새 일정 추가
+                if (!isNewSchedule && selectedScheduleIndex !== null) {
+                    onSave(scheduleType, memo, address, contact, selectedScheduleIndex);
+                    return;
+                }
+                if (selectedCell.existing && selectedCell.existing.length > 0 && isNewSchedule) {
+                    onSave(scheduleType, memo, address, contact, null);
                     return;
                 }
                 
@@ -2023,8 +2120,85 @@
                 <div className={`modal ${isOpen ? 'active' : ''}`} onClick={onClose}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '700px'}}>
                         <div className="modal-header">
-                            일정 {selectedCell.existing ? '수정' : '등록'}
+                            일정 관리 - {selectedCell.day}일
                         </div>
+                        
+                        {selectedCell.existing && selectedCell.existing.length > 0 && (
+                            <div style={{
+                                padding: '15px',
+                                background: '#e3f2fd',
+                                borderRadius: '6px',
+                                marginBottom: '15px',
+                                border: '2px solid #2196f3'
+                            }}>
+                                <div style={{fontWeight: '600', marginBottom: '10px', color: '#1976d2'}}>
+                                    📋 등록된 일정 ({selectedCell.existing.length}개)
+                                </div>
+                                <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                                    {selectedCell.existing.map((sch, idx) => (
+                                        <div
+                                            key={idx}
+                                            onClick={() => loadSchedule(idx)}
+                                            style={{
+                                                padding: '10px',
+                                                background: selectedScheduleIndex === idx ? '#bbdefb' : 'white',
+                                                border: selectedScheduleIndex === idx ? '2px solid #1976d2' : '1px solid #ddd',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center'
+                                            }}
+                                        >
+                                            <div>
+                                                <span className={`schedule-badge schedule-${sch.type}`} style={{marginRight: '8px'}}>
+                                                    {sch.type}
+                                                </span>
+                                                <span style={{fontSize: '14px', fontWeight: '500'}}>
+                                                    {sch.memo || '(메모 없음)'}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm('이 일정을 삭제하시겠습니까?')) {
+                                                        onDelete(idx);
+                                                    }
+                                                }}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    background: '#f44336',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                삭제
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={addNewSchedule}
+                                    style={{
+                                        width: '100%',
+                                        marginTop: '10px',
+                                        padding: '8px',
+                                        background: '#4caf50',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    + 새 일정 추가
+                                </button>
+                            </div>
+                        )}
                         
                         <div className="form-group">
                             <label>대상 직원</label>
@@ -2327,30 +2501,13 @@
                         )}
 
                         <div className="modal-buttons">
-                            {!selectedCell.existing && (
-                                <button className="btn-save" onClick={handleSaveMultiple}>
-                                    저장 {additionalEmployees.length > 0 && `(${additionalEmployees.length + 1}명)`}
+                            <button className="btn-save" onClick={handleSaveMultiple}>
+                                {isNewSchedule ? '저장' : '수정'} {additionalEmployees.length > 0 && !isNewSchedule && `(${additionalEmployees.length + 1}명)`}
+                            </button>
+                            {selectedCell.existing && selectedCell.existing.length > 0 && (
+                                <button className="btn-delete" onClick={() => onDelete(null)}>
+                                    전체 삭제
                                 </button>
-                            )}
-                            {selectedCell.existing && sameScheduleEmployees.length > 0 && (
-                                <>
-                                    <button className="btn-save" onClick={handleSaveMultiple} style={{background: '#3498db'}}>
-                                        변경사항 저장
-                                    </button>
-                                    <button className="btn-delete" onClick={handleRemoveMyself}>
-                                        내 일정만 삭제
-                                    </button>
-                                </>
-                            )}
-                            {selectedCell.existing && sameScheduleEmployees.length === 0 && (
-                                <>
-                                    <button className="btn-save" onClick={handleSaveMultiple} style={{background: '#3498db'}}>
-                                        변경사항 저장
-                                    </button>
-                                    <button className="btn-delete" onClick={onDelete}>
-                                        삭제
-                                    </button>
-                                </>
                             )}
                             <button className="btn-cancel" onClick={onClose}>
                                 취소
@@ -3758,6 +3915,223 @@
             );
         }
 
+
+
+        function PasswordChangeTab({ currentUser, employees, updateEmployeePassword }) {
+            const [currentPassword, setCurrentPassword] = React.useState('');
+            const [newPassword, setNewPassword] = React.useState('');
+            const [confirmPassword, setConfirmPassword] = React.useState('');
+            const [message, setMessage] = React.useState('');
+            const [messageType, setMessageType] = React.useState('');
+
+            const handlePasswordChange = () => {
+                if (!currentPassword || !newPassword || !confirmPassword) {
+                    setMessage('모든 필드를 입력해주세요.');
+                    setMessageType('error');
+                    return;
+                }
+
+                if (currentPassword !== currentUser.password) {
+                    setMessage('현재 비밀번호가 일치하지 않습니다.');
+                    setMessageType('error');
+                    return;
+                }
+
+                if (newPassword !== confirmPassword) {
+                    setMessage('새 비밀번호가 일치하지 않습니다.');
+                    setMessageType('error');
+                    return;
+                }
+
+                if (newPassword.length < 4) {
+                    setMessage('비밀번호는 최소 4자 이상이어야 합니다.');
+                    setMessageType('error');
+                    return;
+                }
+
+                if (currentPassword === newPassword) {
+                    setMessage('새 비밀번호는 현재 비밀번호와 달라야 합니다.');
+                    setMessageType('error');
+                    return;
+                }
+
+                updateEmployeePassword(currentUser.id, newPassword);
+                setMessage('✅ 비밀번호가 성공적으로 변경되었습니다!');
+                setMessageType('success');
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                
+                setTimeout(() => {
+                    setMessage('');
+                    setMessageType('');
+                }, 3000);
+            };
+
+            return (
+                <div style={{padding: '20px', maxWidth: '600px', margin: '0 auto'}}>
+                    <div style={{marginBottom: '30px'}}>
+                        <h2 style={{marginBottom: '10px', color: '#2c3e50'}}>🔑 비밀번호 변경</h2>
+                        <p style={{color: '#7f8c8d', fontSize: '14px'}}>
+                            개인 정보 보호를 위해 주기적으로 비밀번호를 변경해주세요.
+                        </p>
+                    </div>
+
+                    <div style={{
+                        background: 'white',
+                        padding: '30px',
+                        borderRadius: '8px',
+                        border: '2px solid #e0e0e0',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}>
+                        <div style={{marginBottom: '20px'}}>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontWeight: '600',
+                                color: '#2c3e50',
+                                fontSize: '14px'
+                            }}>
+                                현재 비밀번호 *
+                            </label>
+                            <input
+                                type="password"
+                                value={currentPassword}
+                                onChange={(e) => {
+                                    setCurrentPassword(e.target.value);
+                                    setMessage('');
+                                }}
+                                placeholder="현재 사용 중인 비밀번호"
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    border: '2px solid #ddd',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{marginBottom: '20px'}}>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontWeight: '600',
+                                color: '#2c3e50',
+                                fontSize: '14px'
+                            }}>
+                                새 비밀번호 *
+                            </label>
+                            <input
+                                type="password"
+                                value={newPassword}
+                                onChange={(e) => {
+                                    setNewPassword(e.target.value);
+                                    setMessage('');
+                                }}
+                                placeholder="새로운 비밀번호 (최소 4자)"
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    border: '2px solid #ddd',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            />
+                        </div>
+
+                        <div style={{marginBottom: '25px'}}>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontWeight: '600',
+                                color: '#2c3e50',
+                                fontSize: '14px'
+                            }}>
+                                새 비밀번호 확인 *
+                            </label>
+                            <input
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => {
+                                    setConfirmPassword(e.target.value);
+                                    setMessage('');
+                                }}
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter') handlePasswordChange();
+                                }}
+                                placeholder="새 비밀번호 재입력"
+                                style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    border: '2px solid #ddd',
+                                    borderRadius: '6px',
+                                    fontSize: '14px'
+                                }}
+                            />
+                        </div>
+
+                        {message && (
+                            <div style={{
+                                padding: '12px 15px',
+                                marginBottom: '20px',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                background: messageType === 'success' ? '#d4edda' : '#f8d7da',
+                                color: messageType === 'success' ? '#155724' : '#721c24',
+                                border: `1px solid ${messageType === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
+                                textAlign: 'center'
+                            }}>
+                                {message}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handlePasswordChange}
+                            style={{
+                                width: '100%',
+                                padding: '14px',
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '16px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                            }}
+                        >
+                            비밀번호 변경
+                        </button>
+
+                        <div style={{
+                            marginTop: '25px',
+                            padding: '15px',
+                            background: '#f8f9fa',
+                            borderRadius: '6px',
+                            border: '1px solid #e9ecef'
+                        }}>
+                            <h4 style={{margin: '0 0 10px 0', fontSize: '14px', color: '#2c3e50'}}>
+                                💡 비밀번호 변경 안내
+                            </h4>
+                            <ul style={{
+                                margin: 0,
+                                paddingLeft: '20px',
+                                fontSize: '13px',
+                                color: '#6c757d',
+                                lineHeight: '1.8'
+                            }}>
+                                <li>비밀번호는 최소 4자 이상이어야 합니다</li>
+                                <li>현재 비밀번호와 다른 비밀번호를 사용해주세요</li>
+                                <li>비밀번호는 안전하게 저장됩니다</li>
+                                <li>비밀번호를 잊어버린 경우 관리자에게 문의하세요</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         function PermissionsTab({ diaryPermissions, setDiaryPermissions, employees, updateEmployeeRole }) {
             const togglePermission = (employeeId) => {
