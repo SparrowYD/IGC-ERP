@@ -3919,6 +3919,28 @@
                 }
             };
 
+            const toggleAccountingAccess = (employeeId) => {
+                const employee = employees.find(e => e.id === employeeId);
+                if (!employee) return;
+                
+                const newAccess = !employee.accountingAccess;
+                
+                const message = newAccess 
+                    ? '이 직원에게 통장관리 권한을 부여하시겠습니까?\n\n통장관리 탭을 사용할 수 있게 됩니다.'
+                    : '이 직원의 통장관리 권한을 회수하시겠습니까?\n\n통장관리 탭에 접근할 수 없게 됩니다.';
+                
+                if (confirm(message)) {
+                    db.collection('employees').doc(employeeId.toString()).update({
+                        accountingAccess: newAccess
+                    }).then(() => {
+                        alert(newAccess ? '✅ 통장관리 권한이 부여되었습니다.' : '✅ 통장관리 권한이 회수되었습니다.');
+                    }).catch(error => {
+                        console.error('권한 업데이트 실패:', error);
+                        alert('❌ 권한 업데이트에 실패했습니다.');
+                    });
+                }
+            };
+
             return (
                 <div style={{padding: '20px'}}>
                     {/* 관리자 권한 관리 섹션 */}
