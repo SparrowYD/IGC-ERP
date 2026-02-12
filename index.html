@@ -1584,7 +1584,20 @@
 
         function ScheduleTab({ currentUser, sharedSchedules, setSharedSchedules }) {
             const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1));
-            const [employees, setEmployees] = useState(initialEmployees);
+            const [employees, setEmployees] = useState([]);
+            
+            // Firebase에서 직원 데이터 실시간 로드
+            useEffect(() => {
+                const unsubscribe = db.collection('employees').onSnapshot(snapshot => {
+                    const data = [];
+                    snapshot.forEach(doc => {
+                        data.push({ id: parseInt(doc.id), ...doc.data() });
+                    });
+                    data.sort((a, b) => a.id - b.id);
+                    setEmployees(data);
+                });
+                return () => unsubscribe();
+            }, []);
             const schedules = sharedSchedules; // 공유 일정 사용
             const setSchedules = setSharedSchedules; // 공유 일정 setter 사용
             const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -3279,6 +3292,15 @@
             const [editMode, setEditMode] = useState(false);
             const [editData, setEditData] = useState({});
             const [teamAssignModal, setTeamAssignModal] = useState(null);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [newEmpData, setNewEmpData] = useState({
+                name: '',
+                team: 'IGC',
+                phone: '',
+                birthday: '',
+                position: '',
+                department: '심사팀'
+            });
 
             const teams = ['전체', '경영진', '종합관리실', '인정실', 'IGC', 'GIC', '식품', 'GPC', 'RUS', 'DNA', 'UDEM'];
 
@@ -3297,6 +3319,7 @@
                 setSelectedEmployee(employee);
                 setEditMode(false);
                 setEditData({
+                    name: employee.name || '',
                     team: employee.team || 'IGC',
                     phone: employee.phone || '',
                     birthday: employee.birthday || '',
@@ -3313,10 +3336,62 @@
                 setTeamAssignModal(null);
                 alert('팀 배정이 완료되었습니다.');
             };
+            
+            const handleAddEmployee = async () => {
+                console.log('🔵 handleAddEmployee 호출됨!');
+                console.log('📝 newEmpData:', newEmpData);
+                
+                if (!newEmpData.name.trim()) {
+                    alert('이름을 입력해주세요.');
+                    return;
+                }
+                
+                console.log('✅ 이름 검증 통과:', newEmpData.name);
+                
+                try {
+                    // 새로운 ID 생성 (마지막 ID + 1)
+                    console.log('👥 현재 직원 수:', employees.length);
+                    const maxId = employees.reduce((max, emp) => Math.max(max, emp.id || 0), 0);
+                    const newId = maxId + 1;
+                    console.log('🆕 새 ID:', newId);
+                    
+                    const newEmployee = {
+                        id: newId,
+                        name: newEmpData.name,
+                        team: newEmpData.team,
+                        phone: newEmpData.phone,
+                        birthday: newEmpData.birthday,
+                        position: newEmpData.position,
+                        department: newEmpData.department,
+                        role: 'user',
+                        password: '1234'
+                    };
+                    
+                    console.log('💾 Firebase 저장 시작...');
+                    await db.collection('employees').doc(newId.toString()).set(newEmployee);
+                    console.log('✅ Firebase 저장 완료!');
+                    
+                    setShowAddModal(false);
+                    setNewEmpData({
+                        name: '',
+                        team: 'IGC',
+                        phone: '',
+                        birthday: '',
+                        position: '',
+                        department: '심사팀'
+                    });
+                    
+                    alert(`${newEmployee.name} 직원이 추가되었습니다.\n초기 비밀번호: 1234`);
+                } catch (error) {
+                    console.error('직원 추가 오류:', error);
+                    alert('직원 추가 중 오류가 발생했습니다.');
+                }
+            };
 
             const handleSave = () => {
                 // Firebase에 저장
                 db.collection('employees').doc(selectedEmployee.id.toString()).update({
+                    name: editData.name,
                     team: editData.team,
                     phone: editData.phone,
                     birthday: editData.birthday,
@@ -3326,6 +3401,7 @@
                 setEditMode(false);
                 setSelectedEmployee({
                     ...selectedEmployee,
+                    name: editData.name,
                     team: editData.team,
                     phone: editData.phone,
                     birthday: editData.birthday,
@@ -3337,11 +3413,38 @@
 
             return (
                 <>
-                    <div style={{marginBottom: '20px'}}>
-                        <h2 style={{marginBottom: '15px', color: '#2c3e50'}}>👥 조직도</h2>
-                        <p style={{color: '#7f8c8d', fontSize: '14px'}}>
-                            팀별 직원 현황 및 연락처 정보를 확인할 수 있습니다.
-                        </p>
+                    <div style={{marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <div>
+                            <h2 style={{marginBottom: '15px', color: '#2c3e50'}}>👥 조직도</h2>
+                            <p style={{color: '#7f8c8d', fontSize: '14px'}}>
+                                팀별 직원 현황 및 연락처 정보를 확인할 수 있습니다.
+                            </p>
+                        </div>
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log('🔴 직원 추가 버튼 클릭!');
+                                console.log('showAddModal 현재값:', showAddModal);
+                                setShowAddModal(true);
+                                console.log('setShowAddModal(true) 호출됨');
+                            }}
+                            style={{
+                                padding: '10px 20px',
+                                background: '#3498db',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                position: 'relative',
+                                zIndex: 10
+                            }}
+                        >
+                            + 직원 추가
+                        </button>
                     </div>
 
                     <div style={{
@@ -3765,6 +3868,196 @@
                             </div>
                         </div>
                     )}
+                    
+                    {showAddModal && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0,0,0,0.7)',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            zIndex: 9999
+                        }}
+                        onClick={() => {
+                            console.log('🟡 배경 클릭 - 모달 닫기');
+                            setShowAddModal(false);
+                        }}
+                        >
+                            <div style={{
+                                background: 'white',
+                                padding: '30px',
+                                borderRadius: '12px',
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                maxWidth: '500px',
+                                width: '90%',
+                                maxHeight: '90vh',
+                                overflowY: 'auto'
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            >
+                                <h2 style={{marginTop: 0, marginBottom: '20px', color: '#2c3e50'}}>
+                                    👤 직원 추가
+                                </h2>
+                                
+                                <div style={{marginBottom: '15px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>이름 *</label>
+                                    <input
+                                        type="text"
+                                        value={newEmpData.name}
+                                        onChange={(e) => setNewEmpData({...newEmpData, name: e.target.value})}
+                                        placeholder="홍길동"
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                                
+                                <div style={{marginBottom: '15px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>부서</label>
+                                    <input
+                                        type="text"
+                                        value={newEmpData.department}
+                                        onChange={(e) => setNewEmpData({...newEmpData, department: e.target.value})}
+                                        placeholder="심사팀"
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                                
+                                <div style={{marginBottom: '15px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>팀</label>
+                                    <select
+                                        value={newEmpData.team}
+                                        onChange={(e) => setNewEmpData({...newEmpData, team: e.target.value})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            cursor: 'pointer',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    >
+                                        <option value="경영진">경영진</option>
+                                        <option value="종합관리실">종합관리실</option>
+                                        <option value="인정실">인정실</option>
+                                        <option value="IGC">IGC</option>
+                                        <option value="GIC">GIC</option>
+                                        <option value="식품">식품</option>
+                                        <option value="GPC">GPC</option>
+                                        <option value="RUS">RUS</option>
+                                        <option value="DNA">DNA</option>
+                                        <option value="UDEM">UDEM</option>
+                                    </select>
+                                </div>
+                                
+                                <div style={{marginBottom: '15px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>직책</label>
+                                    <input
+                                        type="text"
+                                        value={newEmpData.position}
+                                        onChange={(e) => setNewEmpData({...newEmpData, position: e.target.value})}
+                                        placeholder="팀장, 대리 등"
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                                
+                                <div style={{marginBottom: '15px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>전화번호</label>
+                                    <input
+                                        type="tel"
+                                        value={newEmpData.phone}
+                                        onChange={(e) => setNewEmpData({...newEmpData, phone: e.target.value})}
+                                        placeholder="010-1234-5678"
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                                
+                                <div style={{marginBottom: '20px'}}>
+                                    <label style={{display: 'block', marginBottom: '5px', fontWeight: '600'}}>생년월일</label>
+                                    <input
+                                        type="date"
+                                        value={newEmpData.birthday}
+                                        onChange={(e) => setNewEmpData({...newEmpData, birthday: e.target.value})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            border: '2px solid #ddd',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                </div>
+                                
+                                <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+                                    <button
+                                        onClick={() => setShowAddModal(false)}
+                                        style={{
+                                            padding: '10px 20px',
+                                            background: '#95a5a6',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            fontWeight: '600'
+                                        }}
+                                    >
+                                        취소
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            console.log('🔵 추가 버튼 클릭됨!');
+                                            handleAddEmployee();
+                                        }}
+                                        style={{
+                                            padding: '10px 20px',
+                                            background: '#3498db',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            fontWeight: '600'
+                                        }}
+                                    >
+                                        추가
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </>
             );
         }
@@ -4020,7 +4313,7 @@
             );
         }
 
-        function AccountingTab() {
+        function AccountingTab({ currentUser }) {
             const [accounts, setAccounts] = useState([]);
             const [selectedAccount, setSelectedAccount] = useState('');
             const [transactions, setTransactions] = useState([]);
@@ -4037,6 +4330,7 @@
             });
             const [showAccountModal, setShowAccountModal] = useState(false);
             const [newAccountName, setNewAccountName] = useState('');
+            const [deleteRequests, setDeleteRequests] = useState([]);
 
             useEffect(() => {
                 const unsubscribe = db.collection('accounts').onSnapshot(snapshot => {
@@ -4048,6 +4342,17 @@
                     if (data.length > 0 && !selectedAccount) {
                         setSelectedAccount(data[0].id);
                     }
+                });
+                return () => unsubscribe();
+            }, []);
+            
+            useEffect(() => {
+                const unsubscribe = db.collection('deleteRequests').onSnapshot(snapshot => {
+                    const data = [];
+                    snapshot.forEach(doc => {
+                        data.push({ id: doc.id, ...doc.data() });
+                    });
+                    setDeleteRequests(data);
                 });
                 return () => unsubscribe();
             }, []);
@@ -4083,13 +4388,48 @@
 
             const handleDeleteAccount = () => {
                 if (!selectedAccount) return;
-                if (confirm('이 계좌를 삭제하시겠습니까?\n\n관련된 모든 거래 내역도 삭제됩니다.')) {
-                    db.collection('accounts').doc(selectedAccount).delete();
-                    db.collection('accounting').where('accountId', '==', selectedAccount).get()
-                        .then(snapshot => {
-                            snapshot.forEach(doc => doc.ref.delete());
+                
+                const account = accounts.find(a => a.id === selectedAccount);
+                if (!account) return;
+                
+                // 이미 삭제 요청이 있는지 확인
+                const existingRequest = deleteRequests.find(r => 
+                    r.accountId === selectedAccount && r.status === 'pending'
+                );
+                
+                if (existingRequest) {
+                    // 다른 사람이 요청한 경우 → 승인
+                    if (existingRequest.requestedBy !== currentUser.name) {
+                        if (confirm(`${existingRequest.requestedBy}님이 "${account.name}" 계좌 삭제를 요청했습니다.\n\n승인하시겠습니까?\n\n승인 시 계좌와 모든 거래 내역이 삭제됩니다.`)) {
+                            // 승인 → 삭제 실행
+                            db.collection('accounts').doc(selectedAccount).delete();
+                            db.collection('accounting').where('accountId', '==', selectedAccount).get()
+                                .then(snapshot => {
+                                    snapshot.forEach(doc => doc.ref.delete());
+                                });
+                            db.collection('deleteRequests').doc(existingRequest.id).delete();
+                            setSelectedAccount('');
+                            alert('계좌가 삭제되었습니다.');
+                        }
+                    } else {
+                        // 본인이 요청한 경우 → 취소
+                        if (confirm('삭제 요청을 취소하시겠습니까?')) {
+                            db.collection('deleteRequests').doc(existingRequest.id).delete();
+                            alert('삭제 요청이 취소되었습니다.');
+                        }
+                    }
+                } else {
+                    // 새로운 삭제 요청
+                    if (confirm(`"${account.name}" 계좌 삭제를 요청하시겠습니까?\n\n다른 관리자의 승인이 필요합니다.`)) {
+                        db.collection('deleteRequests').add({
+                            accountId: selectedAccount,
+                            accountName: account.name,
+                            requestedBy: currentUser.name,
+                            requestedAt: new Date().getTime(),
+                            status: 'pending'
                         });
-                    setSelectedAccount('');
+                        alert('삭제 요청이 등록되었습니다.\n다른 관리자의 승인을 기다려주세요.');
+                    }
                 }
             };
 
