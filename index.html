@@ -904,12 +904,17 @@
             const [error, setError] = useState('');
 
             const handleLogin = () => {
+                console.log('로그인 시도:', selectedName, password);
+                console.log('직원 목록:', employees.length);
+                
                 if (!selectedName || !password) {
                     setError('이름과 비밀번호를 입력해주세요.');
                     return;
                 }
 
                 const employee = employees.find(e => e.name === selectedName);
+                console.log('찾은 직원:', employee);
+                
                 if (!employee) {
                     setError('등록되지 않은 사용자입니다.');
                     return;
@@ -917,9 +922,11 @@
 
                 if (employee.password !== password) {
                     setError('비밀번호가 일치하지 않습니다.');
+                    console.log('비밀번호 불일치:', employee.password, '!=', password);
                     return;
                 }
 
+                console.log('로그인 성공!');
                 onLogin(employee);
             };
 
@@ -1057,8 +1064,19 @@
                 const unsubscribe = db.collection('schedules').onSnapshot((snapshot) => {
                     const schedulesData = {};
                     snapshot.docs.forEach(doc => {
-                        schedulesData[doc.id] = doc.data();
+                        const data = doc.data();
+                        schedulesData[doc.id] = data;
+                        
+                        // 로그: groupId 확인
+                        if (data.schedules && data.schedules.length > 0) {
+                            data.schedules.forEach((sch, idx) => {
+                                if (sch.groupId) {
+                                    console.log(`🔥 Firebase에서 로드: ${doc.id} - groupId: ${sch.groupId}, 날짜: ${sch.startDay}~${sch.endDay}, 직원: ${sch.employeeIds?.length}명`);
+                                }
+                            });
+                        }
                     });
+                    console.log('📦 전체 일정 로드 완료:', Object.keys(schedulesData).length, '개');
                     setSharedSchedules(schedulesData);
                 });
                 return () => unsubscribe();
@@ -1294,7 +1312,7 @@
                 const end = new Date(endDate);
 
                 Object.keys(sharedSchedules).forEach(key => {
-                    const schedule = sharedSchedules[key];
+                    const data = sharedSchedules[key];
                     const [empId, year, month, day] = key.split('-').map(Number);
                     const scheduleDate = new Date(year, month, day);
 
@@ -1307,22 +1325,37 @@
                         if (emp && emp.id !== empId) return;
                     }
 
-                    // 일정 종류 필터
-                    if (selectedType !== '전체' && schedule.type !== selectedType) return;
-                    
-                    // 키워드 필터
-                    if (searchKeyword.trim() !== '') {
-                        const keyword = searchKeyword.toLowerCase();
-                        const memo = (schedule.memo || '').toLowerCase();
-                        if (!memo.includes(keyword)) return;
+                    // 데이터 구조 파싱
+                    let scheduleArray = [];
+                    if (data) {
+                        if (data.schedules && Array.isArray(data.schedules)) {
+                            scheduleArray = data.schedules;
+                        } else if (Array.isArray(data)) {
+                            scheduleArray = data;
+                        } else if (data.type) {
+                            scheduleArray = [data];
+                        }
                     }
 
-                    const employee = employees.find(e => e.id === empId);
-                    results.push({
-                        employee: employee?.name || '알 수 없음',
-                        date: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-                        type: schedule.type,
-                        memo: schedule.memo || ''
+                    // 각 일정에 대해 필터링
+                    scheduleArray.forEach(schedule => {
+                        // 일정 종류 필터
+                        if (selectedType !== '전체' && schedule.type !== selectedType) return;
+                        
+                        // 키워드 필터
+                        if (searchKeyword.trim() !== '') {
+                            const keyword = searchKeyword.toLowerCase();
+                            const memo = (schedule.memo || '').toLowerCase();
+                            if (!memo.includes(keyword)) return;
+                        }
+
+                        const employee = employees.find(e => e.id === empId);
+                        results.push({
+                            employee: employee?.name || '알 수 없음',
+                            date: `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+                            type: schedule.type,
+                            memo: schedule.memo || ''
+                        });
                     });
                 });
 
@@ -1557,7 +1590,7 @@
             const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
             const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
             const [selectedCell, setSelectedCell] = useState(null);
-            const [hoveredEmployee, setHoveredEmployee] = useState(null); // 호버된 직원
+            const [hoveredEmployee, setHoveredEmployee] = useState(null);
             const tableRef = useRef(null);
 
             // 드래그 스크롤 기능
@@ -1635,14 +1668,102 @@
 
             const handleCellClick = (employeeId, day) => {
                 const key = `${employeeId}-${currentDate.getFullYear()}-${currentDate.getMonth()}-${day}`;
-                const existingSchedules = schedules[key] || [];
+                const data = schedules[key];
+                let existingSchedules = [];
+                
+                if (data) {
+                    if (data.schedules && Array.isArray(data.schedules)) {
+                        existingSchedules = data.schedules;
+                    } else if (Array.isArray(data)) {
+                        existingSchedules = data;
+                    } else if (data.type) {
+                        existingSchedules = [data];
+                    }
+                }
+                
+                const year = currentDate.getFullYear();
+                const month = currentDate.getMonth();
+                const maxDay = new Date(year, month + 1, 0).getDate();
+                
+                const schedulesWithEmployees = existingSchedules.map(schedule => {
+                    // 연속 날짜 범위 찾기
+                    let startDay = day;
+                    let endDay = day;
+                    
+                    // 뒤로 확인
+                    for (let d = day + 1; d <= maxDay; d++) {
+                        const checkKey = `${employeeId}-${year}-${month}-${d}`;
+                        const checkData = schedules[checkKey];
+                        if (checkData && checkData.schedules) {
+                            const hasMatch = checkData.schedules.some(s => 
+                                s.type === schedule.type && s.memo === schedule.memo
+                            );
+                            if (hasMatch) {
+                                endDay = d;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // 앞으로 확인
+                    for (let d = day - 1; d >= 1; d--) {
+                        const checkKey = `${employeeId}-${year}-${month}-${d}`;
+                        const checkData = schedules[checkKey];
+                        if (checkData && checkData.schedules) {
+                            const hasMatch = checkData.schedules.some(s => 
+                                s.type === schedule.type && s.memo === schedule.memo
+                            );
+                            if (hasMatch) {
+                                startDay = d;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // 전체 날짜 범위에서 같은 일정을 가진 모든 직원 찾기
+                    const allEmployeeIds = new Set();
+                    
+                    for (let d = startDay; d <= endDay; d++) {
+                        employees.forEach(emp => {
+                            const empKey = `${emp.id}-${year}-${month}-${d}`;
+                            const empData = schedules[empKey];
+                            
+                            if (empData && empData.schedules) {
+                                const hasMatch = empData.schedules.some(s => 
+                                    s.type === schedule.type && 
+                                    s.memo === schedule.memo
+                                );
+                                if (hasMatch) {
+                                    allEmployeeIds.add(emp.id);
+                                }
+                            }
+                        });
+                    }
+                    
+                    console.log(`📅 날짜 범위: ${startDay}일 ~ ${endDay}일`);
+                    console.log(`👥 같은 일정 직원: ${allEmployeeIds.size}명`);
+                    
+                    return {
+                        ...schedule,
+                        startDay: startDay,
+                        endDay: endDay,
+                        employeeIds: Array.from(allEmployeeIds)
+                    };
+                });
+                
                 setSelectedCell({
                     employeeId,
                     day,
                     year: currentDate.getFullYear(),
                     month: currentDate.getMonth(),
                     key,
-                    existing: Array.isArray(existingSchedules) ? existingSchedules : (existingSchedules ? [existingSchedules] : [])
+                    existing: schedulesWithEmployees
                 });
                 setScheduleModalOpen(true);
             };
@@ -1650,11 +1771,30 @@
             const saveSchedule = (type, memo, address, contact, scheduleIndex = null) => {
                 if (!selectedCell) return;
                 const newSchedules = { ...schedules };
-                const currentSchedules = Array.isArray(newSchedules[selectedCell.key]) 
-                    ? [...newSchedules[selectedCell.key]] 
-                    : (newSchedules[selectedCell.key] ? [newSchedules[selectedCell.key]] : []);
+                const data = newSchedules[selectedCell.key];
+                let currentSchedules = [];
                 
-                const newSchedule = { type, memo, address, contact };
+                if (data) {
+                    if (data.schedules && Array.isArray(data.schedules)) {
+                        currentSchedules = [...data.schedules];
+                    } else if (Array.isArray(data)) {
+                        currentSchedules = [...data];
+                    } else if (data.type) {
+                        currentSchedules = [data];
+                    }
+                }
+                
+                const groupId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const newSchedule = { 
+                    type, 
+                    memo, 
+                    address, 
+                    contact,
+                    groupId: groupId,
+                    startDay: selectedCell.day,
+                    endDay: selectedCell.day,
+                    employeeIds: [selectedCell.employeeId]
+                };
                 
                 if (scheduleIndex !== null && scheduleIndex >= 0) {
                     currentSchedules[scheduleIndex] = newSchedule;
@@ -1662,10 +1802,10 @@
                     currentSchedules.push(newSchedule);
                 }
                 
-                newSchedules[selectedCell.key] = currentSchedules;
+                newSchedules[selectedCell.key] = { schedules: currentSchedules };
                 setSchedules(newSchedules);
                 
-                db.collection('schedules').doc(selectedCell.key).set(currentSchedules);
+                db.collection('schedules').doc(selectedCell.key).set({ schedules: currentSchedules });
                 
                 setScheduleModalOpen(false);
                 setSelectedCell(null);
@@ -1674,9 +1814,18 @@
             const deleteSchedule = (scheduleIndex = null) => {
                 if (!selectedCell) return;
                 const newSchedules = { ...schedules };
-                const currentSchedules = Array.isArray(newSchedules[selectedCell.key]) 
-                    ? [...newSchedules[selectedCell.key]] 
-                    : (newSchedules[selectedCell.key] ? [newSchedules[selectedCell.key]] : []);
+                const data = newSchedules[selectedCell.key];
+                let currentSchedules = [];
+                
+                if (data) {
+                    if (data.schedules && Array.isArray(data.schedules)) {
+                        currentSchedules = [...data.schedules];
+                    } else if (Array.isArray(data)) {
+                        currentSchedules = [...data];
+                    } else if (data.type) {
+                        currentSchedules = [data];
+                    }
+                }
                 
                 if (scheduleIndex !== null && scheduleIndex >= 0) {
                     // 특정 일정만 삭제
@@ -1691,8 +1840,8 @@
                         });
                     } else {
                         // 남은 일정이 있음
-                        newSchedules[selectedCell.key] = currentSchedules;
-                        db.collection('schedules').doc(selectedCell.key).set(currentSchedules).then(() => {
+                        newSchedules[selectedCell.key] = { schedules: currentSchedules };
+                        db.collection('schedules').doc(selectedCell.key).set({ schedules: currentSchedules }).then(() => {
                             setSchedules(newSchedules);
                             setSelectedCell({
                                 ...selectedCell,
@@ -1836,76 +1985,122 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {employees.map((employee, index) => (
-                                    <tr key={employee.id}>
-                                        <td 
-                                            className="employee-name"
-                                            style={{
-                                                background: hoveredEmployee === employee.id ? '#3498db' : '#ecf0f1',
-                                                color: hoveredEmployee === employee.id ? 'white' : 'inherit',
-                                                transition: 'all 0.2s ease'
-                                            }}
-                                        >
-                                            <div className="employee-info">
-                                                <div className="employee-name-section">
-                                                    <span className="employee-name-text">{employee.name}</span>
-                                                    {currentUser.role === 'admin' && (
-                                                        <div className="employee-order-btns">
-                                                            <button 
-                                                                className="order-btn"
-                                                                onClick={() => moveEmployee(index, 'up')}
-                                                                disabled={index === 0}
-                                                                title="위로 이동"
-                                                            >
-                                                                ▲
-                                                            </button>
-                                                            <button 
-                                                                className="order-btn"
-                                                                onClick={() => moveEmployee(index, 'down')}
-                                                                disabled={index === employees.length - 1}
-                                                                title="아래로 이동"
-                                                            >
-                                                                ▼
-                                                            </button>
-                                                        </div>
+                                {employees.map((employee, index) => {
+                                    const year = currentDate.getFullYear();
+                                    const month = currentDate.getMonth();
+                                    const renderedDays = new Set();
+                                    
+                                    return (
+                                        <tr key={employee.id}>
+                                            <td 
+                                                className="employee-name"
+                                                style={{
+                                                    background: hoveredEmployee === employee.id ? '#3498db' : '#ecf0f1',
+                                                    color: hoveredEmployee === employee.id ? 'white' : 'inherit',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                <div className="employee-info">
+                                                    <div className="employee-name-section">
+                                                        <span className="employee-name-text">{employee.name}</span>
+                                                        {currentUser.role === 'admin' && (
+                                                            <div className="employee-order-btns">
+                                                                <button 
+                                                                    className="order-btn"
+                                                                    onClick={() => moveEmployee(index, 'up')}
+                                                                    disabled={index === 0}
+                                                                    title="위로 이동"
+                                                                >
+                                                                    ▲
+                                                                </button>
+                                                                <button 
+                                                                    className="order-btn"
+                                                                    onClick={() => moveEmployee(index, 'down')}
+                                                                    disabled={index === employees.length - 1}
+                                                                    title="아래로 이동"
+                                                                >
+                                                                    ▼
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {currentUser.role === 'admin' && employee.id !== currentUser.id && (
+                                                        <button 
+                                                            className="employee-delete-btn"
+                                                            onClick={() => deleteEmployee(employee.id)}
+                                                        >
+                                                            삭제
+                                                        </button>
                                                     )}
                                                 </div>
-                                                {currentUser.role === 'admin' && employee.id !== currentUser.id && (
-                                                    <button 
-                                                        className="employee-delete-btn"
-                                                        onClick={() => deleteEmployee(employee.id)}
+                                            </td>
+                                            {days.map(day => {
+                                                // 이미 병합된 날짜는 건너뛰기
+                                                if (renderedDays.has(day)) {
+                                                    return null;
+                                                }
+                                                
+                                                const key = `${employee.id}-${year}-${month}-${day}`;
+                                                const data = schedules[key];
+                                                const isTodayCell = isToday(currentDate, day);
+                                                const isWeekendCell = isWeekend(currentDate, day);
+                                                
+                                                let scheduleArray = [];
+                                                if (data) {
+                                                    if (data.schedules && Array.isArray(data.schedules)) {
+                                                        scheduleArray = data.schedules;
+                                                    } else if (Array.isArray(data)) {
+                                                        scheduleArray = data;
+                                                    } else if (data.type) {
+                                                        scheduleArray = [data];
+                                                    }
+                                                }
+                                                
+                                                // 연속 일정 병합 계산
+                                                let colspan = 1;
+                                                if (scheduleArray.length > 0) {
+                                                    const firstSchedule = scheduleArray[0];
+                                                    
+                                                    // 뒤로 연속 확인
+                                                    for (let d = day + 1; d <= days[days.length - 1]; d++) {
+                                                        const nextKey = `${employee.id}-${year}-${month}-${d}`;
+                                                        const nextData = schedules[nextKey];
+                                                        
+                                                        if (nextData && nextData.schedules) {
+                                                            const hasMatch = nextData.schedules.some(s => 
+                                                                s.type === firstSchedule.type && 
+                                                                s.memo === firstSchedule.memo
+                                                            );
+                                                            if (hasMatch) {
+                                                                colspan++;
+                                                                renderedDays.add(d);
+                                                            } else {
+                                                                break;
+                                                            }
+                                                        } else {
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                return (
+                                                    <td
+                                                        key={day}
+                                                        colSpan={colspan}
+                                                        className={`day-cell ${isWeekendCell ? 'weekend' : ''} ${isTodayCell ? 'today' : ''}`}
+                                                        onDoubleClick={() => handleCellClick(employee.id, day)}
+                                                onMouseEnter={() => setHoveredEmployee(employee.id)}
+                                                onMouseLeave={() => setHoveredEmployee(null)}
+                                                style={{
+                                                            cursor: 'pointer',
+                                                            background: hoveredEmployee === employee.id 
+                                                                ? (isWeekendCell ? '#e8f4f8' : '#f0f8ff') 
+                                                                : undefined,
+                                                            transition: 'background 0.15s ease'
+                                                        }}
+                                                        title={`${employee.name} - ${day}일${colspan > 1 ? `~${day + colspan - 1}일` : ''} (더블클릭하여 일정 등록/수정)`}
                                                     >
-                                                        삭제
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                        {days.map(day => {
-                                            const key = `${employee.id}-${currentDate.getFullYear()}-${currentDate.getMonth()}-${day}`;
-                                            const schedule = schedules[key];
-                                            const isTodayCell = isToday(currentDate, day);
-                                            const isWeekendCell = isWeekend(currentDate, day);
-                                            
-                                            return (
-                                                <td
-                                                    key={day}
-                                                    className={`day-cell ${isWeekendCell ? 'weekend' : ''} ${isTodayCell ? 'today' : ''}`}
-                                                    onDoubleClick={() => handleCellClick(employee.id, day)}
-                                                    onMouseEnter={() => setHoveredEmployee(employee.id)}
-                                                    onMouseLeave={() => setHoveredEmployee(null)}
-                                                    style={{
-                                                        cursor: 'pointer',
-                                                        background: hoveredEmployee === employee.id 
-                                                            ? (isWeekendCell ? '#e8f4f8' : '#f0f8ff') 
-                                                            : undefined,
-                                                        transition: 'background 0.15s ease'
-                                                    }}
-                                                    title={`${employee.name} - ${day}일 (더블클릭하여 일정 등록/수정)`}
-                                                >
-                                                    {(() => {
-                                                        const scheduleData = schedule;
-                                                        const scheduleArray = Array.isArray(scheduleData) ? scheduleData : (scheduleData ? [scheduleData] : []);
-                                                        return scheduleArray.length > 0 && (
+                                                        {scheduleArray.length > 0 && (
                                                             <div className="schedule-content">
                                                                 {scheduleArray.map((sch, idx) => (
                                                                     <div key={idx} style={{marginBottom: idx < scheduleArray.length - 1 ? '4px' : '0'}}>
@@ -1920,13 +2115,13 @@
                                                                     </div>
                                                                 ))}
                                                             </div>
-                                                        );
-                                                    })()}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -1976,35 +2171,46 @@
             const [isNewSchedule, setIsNewSchedule] = useState(true);
 
             useEffect(() => {
+                // 항상 endDay 초기화
+                setEndDay(selectedCell?.day || null);
+                
                 if (selectedCell?.existing && selectedCell.existing.length > 0) {
                     setIsNewSchedule(false);
                     setSelectedScheduleIndex(0);
                     const firstSchedule = selectedCell.existing[0];
+                    
+                    console.log('📋 불러온 일정:', firstSchedule);
+                    console.log('👥 employeeIds:', firstSchedule.employeeIds);
+                    console.log('📅 날짜:', firstSchedule.startDay, '~', firstSchedule.endDay);
+                    
+                    // 일정 정보 설정
                     setScheduleType(firstSchedule.type);
                     setMemo(firstSchedule.memo || '');
                     setAddress(firstSchedule.address || '');
                     setContact(firstSchedule.contact || '');
-                    setAdditionalEmployees([]);
                     
-                    // 같은 날짜, 같은 일정 종류, 같은 메모를 가진 직원 찾기
-                    const sameSchedule = [];
-                    Object.keys(sharedSchedules).forEach(key => {
-                        const [empId, year, month, day] = key.split('-').map(Number);
-                        const schedule = sharedSchedules[key];
+                    // 날짜 범위 설정
+                    if (firstSchedule.startDay && firstSchedule.endDay) {
+                        setEndDay(firstSchedule.endDay);
+                    }
+                    
+                    // employeeIds를 직원 목록으로 변환
+                    if (firstSchedule.employeeIds && Array.isArray(firstSchedule.employeeIds)) {
+                        const allEmps = firstSchedule.employeeIds
+                            .map(id => employees.find(e => e.id === id))
+                            .filter(e => e);
                         
-                        if (year === selectedCell.year && 
-                            month === selectedCell.month && 
-                            day === selectedCell.day &&
-                            schedule.type === selectedCell.existing.type &&
-                            schedule.memo === selectedCell.existing.memo &&
-                            empId !== selectedCell.employeeId) {
-                            
-                            const emp = employees.find(e => e.id === empId);
-                            if (emp) sameSchedule.push(emp);
-                        }
-                    });
-                    setSameScheduleEmployees(sameSchedule);
-                    setSameScheduleEmployees([]);
+                        const additionalEmps = allEmps.filter(e => e.id !== selectedCell.employeeId);
+                        
+                        setAdditionalEmployees(additionalEmps);
+                        setSameScheduleEmployees(additionalEmps);
+                        
+                        console.log('✅ 전체:', allEmps.length, '명');
+                        console.log('✅ 추가:', additionalEmps.length, '명');
+                    } else {
+                        setAdditionalEmployees([]);
+                        setSameScheduleEmployees([]);
+                    }
                 } else {
                     setIsNewSchedule(true);
                     setSelectedScheduleIndex(null);
@@ -2014,7 +2220,6 @@
                     setContact('');
                     setAdditionalEmployees([]);
                     setSameScheduleEmployees([]);
-                    setEndDay(selectedCell?.day || null);
                 }
             }, [selectedCell, sharedSchedules, employees]);
             
@@ -2077,18 +2282,137 @@
                 }
             };
             
-            const handleSaveMultiple = () => {
+            const handleDeleteAll = async () => {
+                if (!selectedCell?.existing || selectedCell.existing.length === 0) return;
+                
+                const firstSchedule = selectedCell.existing[0];
+                const employeeIds = firstSchedule.employeeIds || [];
+                const startDay = firstSchedule.startDay || selectedCell.day;
+                const endDay = firstSchedule.endDay || selectedCell.day;
+                
+                if (!confirm(`${startDay}일~${endDay}일의 모든 직원(${employeeIds.length}명)의 "${firstSchedule.type} - ${firstSchedule.memo}" 일정을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) {
+                    return;
+                }
+                
+                try {
+                    let deleted = 0;
+                    
+                    for (let day = startDay; day <= endDay; day++) {
+                        for (const empId of employeeIds) {
+                            const key = `${empId}-${selectedCell.year}-${selectedCell.month}-${day}`;
+                            const doc = await db.collection('schedules').doc(key).get();
+                            
+                            if (doc.exists) {
+                                const data = doc.data();
+                                if (data.schedules) {
+                                    const filtered = data.schedules.filter(s => 
+                                        !(s.type === firstSchedule.type && s.memo === firstSchedule.memo)
+                                    );
+                                    
+                                    if (filtered.length === 0) {
+                                        await db.collection('schedules').doc(key).delete();
+                                    } else {
+                                        await db.collection('schedules').doc(key).set({ schedules: filtered });
+                                    }
+                                    deleted++;
+                                }
+                            }
+                        }
+                    }
+                    
+                    alert(`${deleted}개의 일정이 삭제되었습니다!`);
+                    onClose();
+                } catch (error) {
+                    console.error('삭제 오류:', error);
+                    alert('삭제 중 오류가 발생했습니다: ' + error.message);
+                }
+            };
+            
+            const handleSaveMultiple = async () => {
                 if (!memo.trim()) {
                     alert('메모를 입력해주세요.');
                     return;
                 }
                 
-                // 기존 일정 수정 또는 새 일정 추가
+                // 기존 일정 수정
                 if (!isNewSchedule && selectedScheduleIndex !== null) {
-                    onSave(scheduleType, memo, address, contact, selectedScheduleIndex);
+                    const originalSchedule = selectedCell.existing[selectedScheduleIndex];
+                    const employee = employees.find(e => e.id === selectedCell.employeeId);
+                    const allEmployees = [employee, ...additionalEmployees];
+                    const allEmployeeIds = allEmployees.map(e => e.id);
+                    
+                    console.log('📝 수정 시작:', allEmployeeIds.length, '명');
+                    
+                    try {
+                        // 기존 일정 삭제 (모든 직원, 모든 날짜)
+                        const oldEmployeeIds = originalSchedule.employeeIds || [selectedCell.employeeId];
+                        const oldStartDay = originalSchedule.startDay || selectedCell.day;
+                        const oldEndDay = originalSchedule.endDay || selectedCell.day;
+                        
+                        for (let day = oldStartDay; day <= oldEndDay; day++) {
+                            for (const empId of oldEmployeeIds) {
+                                const key = `${empId}-${selectedCell.year}-${selectedCell.month}-${day}`;
+                                const doc = await db.collection('schedules').doc(key).get();
+                                
+                                if (doc.exists) {
+                                    const data = doc.data();
+                                    if (data.schedules) {
+                                        const filtered = data.schedules.filter(s => 
+                                            !(s.type === originalSchedule.type && s.memo === originalSchedule.memo)
+                                        );
+                                        
+                                        if (filtered.length === 0) {
+                                            await db.collection('schedules').doc(key).delete();
+                                        } else {
+                                            await db.collection('schedules').doc(key).set({ schedules: filtered });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 새 일정 저장 (새로운 직원, 새로운 날짜)
+                        const groupId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                        
+                        for (let day = selectedCell.day; day <= endDay; day++) {
+                            for (const empId of allEmployeeIds) {
+                                const key = `${empId}-${selectedCell.year}-${selectedCell.month}-${day}`;
+                                const scheduleData = {
+                                    type: scheduleType,
+                                    memo: memo,
+                                    address: address,
+                                    contact: contact,
+                                    groupId: groupId,
+                                    startDay: selectedCell.day,
+                                    endDay: endDay,
+                                    employeeIds: allEmployeeIds
+                                };
+                                
+                                const doc = await db.collection('schedules').doc(key).get();
+                                let currentSchedules = [];
+                                if (doc.exists) {
+                                    const data = doc.data();
+                                    if (data.schedules && Array.isArray(data.schedules)) {
+                                        currentSchedules = data.schedules;
+                                    }
+                                }
+                                currentSchedules.push(scheduleData);
+                                await db.collection('schedules').doc(key).set({ schedules: currentSchedules });
+                            }
+                        }
+                        
+                        alert('일정이 수정되었습니다!');
+                        onClose();
+                    } catch (error) {
+                        console.error('수정 오류:', error);
+                        alert('수정 중 오류가 발생했습니다: ' + error.message);
+                    }
                     return;
                 }
-                if (selectedCell.existing && selectedCell.existing.length > 0 && isNewSchedule) {
+
+                
+                // 같은 날짜에 새 일정 추가
+                if (selectedCell.existing && selectedCell.existing.length > 0 && isNewSchedule && endDay === selectedCell.day) {
                     onSave(scheduleType, memo, address, contact, null);
                     return;
                 }
@@ -2096,24 +2420,51 @@
                 const employee = employees.find(e => e.id === selectedCell.employeeId);
                 const allEmployees = [employee, ...additionalEmployees];
                 
-                // 연속 일정 저장
-                for (let day = selectedCell.day; day <= endDay; day++) {
-                    allEmployees.forEach(emp => {
-                        const key = `${emp.id}-${selectedCell.year}-${selectedCell.month}-${day}`;
-                        const scheduleData = {
-                            type: scheduleType,
-                            memo: memo,
-                            address: address,
-                            contact: contact
-                        };
-                        
-                        // Firebase에 저장
-                        db.collection('schedules').doc(key).set(scheduleData);
-                    });
-                }
+                // 연속 일정 저장 - groupId 추가!
+                const groupId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                const employeeIds = allEmployees.map(e => e.id);
+                console.log('🆕 새 그룹 생성:', groupId, '직원:', employeeIds.length, '명, 날짜:', selectedCell.day, '~', endDay);
                 
-                setAdditionalEmployees([]);
-                onClose();
+                try {
+                    for (let day = selectedCell.day; day <= endDay; day++) {
+                        for (const emp of allEmployees) {
+                            const key = `${emp.id}-${selectedCell.year}-${selectedCell.month}-${day}`;
+                            const scheduleData = {
+                                type: scheduleType,
+                                memo: memo,
+                                address: address,
+                                contact: contact,
+                                groupId: groupId,
+                                startDay: selectedCell.day,
+                                endDay: endDay,
+                                employeeIds: employeeIds
+                            };
+                            
+                            const doc = await db.collection('schedules').doc(key).get();
+                            let currentSchedules = [];
+                            if (doc.exists) {
+                                const data = doc.data();
+                                if (data.schedules && Array.isArray(data.schedules)) {
+                                    currentSchedules = data.schedules;
+                                } else if (data.type) {
+                                    currentSchedules = [data];
+                                }
+                            }
+                            currentSchedules.push(scheduleData);
+                            
+                            await db.collection('schedules').doc(key).set({
+                                schedules: currentSchedules
+                            });
+                        }
+                    }
+                    
+                    alert('일정이 저장되었습니다!');
+                    setAdditionalEmployees([]);
+                    onClose();
+                } catch (error) {
+                    console.error('저장 오류:', error);
+                    alert('저장 중 오류가 발생했습니다: ' + error.message);
+                }
             };
 
             return (
@@ -2206,36 +2557,77 @@
                         </div>
 
                         <div className="form-group">
-                            <label>날짜 범위</label>
-                            {!selectedCell.existing ? (
-                                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px'}}>
+                                <div>
+                                    <label style={{display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50'}}>
+                                        시작일 (Starts)
+                                    </label>
                                     <input 
-                                        type="number" 
-                                        min="1" 
-                                        max={new Date(selectedCell.year, selectedCell.month + 1, 0).getDate()}
-                                        value={selectedCell.day}
-                                        disabled
-                                        style={{width: '80px', textAlign: 'center'}}
+                                        type="date"
+                                        value={(() => {
+                                            if (!selectedCell.existing || selectedCell.existing.length === 0) {
+                                                return `${selectedCell.year}-${String(selectedCell.month + 1).padStart(2, '0')}-${String(selectedCell.day).padStart(2, '0')}`;
+                                            }
+                                            const firstSchedule = selectedCell.existing[0];
+                                            const year = selectedCell.year;
+                                            const month = selectedCell.month;
+                                            let startDay = selectedCell.day;
+                                            
+                                            // 앞으로 연속 확인
+                                            for (let d = selectedCell.day - 1; d >= 1; d--) {
+                                                const checkKey = `${selectedCell.employeeId}-${year}-${month}-${d}`;
+                                                const checkData = sharedSchedules[checkKey];
+                                                if (checkData && checkData.schedules) {
+                                                    const hasMatch = checkData.schedules.some(s => 
+                                                        s.type === firstSchedule.type && 
+                                                        s.memo === firstSchedule.memo
+                                                    );
+                                                    if (hasMatch) {
+                                                        startDay = d;
+                                                    } else {
+                                                        break;
+                                                    }
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            return `${year}-${String(month + 1).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`;
+                                        })()}
+                                        disabled={!isNewSchedule}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            border: '2px solid #3498db',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            fontWeight: '600',
+                                            background: 'white'
+                                        }}
                                     />
-                                    <span>일 ~</span>
-                                    <input 
-                                        type="number" 
-                                        min={selectedCell.day} 
-                                        max={new Date(selectedCell.year, selectedCell.month + 1, 0).getDate()}
-                                        value={endDay}
-                                        onChange={(e) => setEndDay(parseInt(e.target.value))}
-                                        style={{width: '80px', textAlign: 'center'}}
-                                    />
-                                    <span>일</span>
-                                    {endDay > selectedCell.day && (
-                                        <span style={{color: '#27ae60', fontWeight: '600'}}>
-                                            ({endDay - selectedCell.day + 1}일간)
-                                        </span>
-                                    )}
                                 </div>
-                            ) : (
-                                <input type="text" value={`${selectedCell.day}일`} disabled />
-                            )}
+                                <div>
+                                    <label style={{display: 'block', marginBottom: '8px', fontWeight: '600', color: '#2c3e50'}}>
+                                        종료일 (Ends)
+                                    </label>
+                                    <input 
+                                        type="date"
+                                        value={`${selectedCell.year}-${String(selectedCell.month + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`}
+                                        onChange={(e) => {
+                                            const newDate = new Date(e.target.value);
+                                            setEndDay(newDate.getDate());
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            border: '2px solid #3498db',
+                                            borderRadius: '6px',
+                                            fontSize: '14px',
+                                            fontWeight: '600'
+                                        }}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         <div className="form-group">
@@ -2263,7 +2655,7 @@
                                 type="text"
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
-                                placeholder="예: 경기도 성남시 중원구 갈마치로 288번길 14, 1115, 1116호"
+                                placeholder="주소 입력"
                             />
                         </div>
 
@@ -2273,7 +2665,7 @@
                                 type="text"
                                 value={contact}
                                 onChange={(e) => setContact(e.target.value)}
-                                placeholder="예: 이병주이사 (031-755-4294)"
+                                placeholder="연락처 입력"
                             />
                         </div>
 
@@ -2363,43 +2755,32 @@
                             </div>
                         )}
 
-                        {!selectedCell.existing && (
+                        {(isNewSchedule || (!isNewSchedule && additionalEmployees.length >= 0)) && (
                             <div className="form-group">
-                                <label>
-                                    추가 인원 (같은 일정)
-                                    <button
-                                        onClick={handleAddAllEmployees}
-                                        style={{
-                                            marginLeft: '10px',
-                                            padding: '5px 10px',
-                                            background: '#27ae60',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            fontSize: '12px',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        👥 전 직원 추가
-                                    </button>
+                                <label style={{fontSize: '16px', fontWeight: '700', color: '#2c3e50', marginBottom: '15px', display: 'block'}}>
+                                    👥 Subject (대상 직원)
                                 </label>
                                 <div style={{
                                     display: 'grid',
-                                    gridTemplateColumns: '1fr auto 1fr',
-                                    gap: '15px',
+                                    gridTemplateColumns: '1fr 80px 1fr',
+                                    gap: '20px',
                                     alignItems: 'start'
                                 }}>
                                     <div>
                                         <div style={{
-                                            fontSize: '13px',
-                                            fontWeight: '600',
-                                            marginBottom: '8px',
-                                            color: '#7f8c8d'
+                                            fontSize: '14px',
+                                            fontWeight: '700',
+                                            marginBottom: '10px',
+                                            color: '#2c3e50',
+                                            padding: '8px',
+                                            background: '#ecf0f1',
+                                            borderRadius: '4px',
+                                            textAlign: 'center'
                                         }}>
-                                            선택 가능 ({availableEmployees.length}명)
+                                            List ({availableEmployees.length}명)
                                         </div>
                                         <div style={{
-                                            maxHeight: '200px',
+                                            maxHeight: '150px',
                                             overflowY: 'auto',
                                             border: '2px solid #ddd',
                                             borderRadius: '6px',
@@ -2441,24 +2822,50 @@
                                     <div style={{
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        gap: '10px',
-                                        paddingTop: '30px'
+                                        gap: '20px',
+                                        paddingTop: '50px',
+                                        alignItems: 'center'
                                     }}>
-                                        <div style={{fontSize: '20px', textAlign: 'center', color: '#3498db'}}>▶</div>
-                                        <div style={{fontSize: '20px', textAlign: 'center', color: '#95a5a6'}}>◀</div>
+                                        <div style={{
+                                            fontSize: '30px',
+                                            color: '#27ae60',
+                                            fontWeight: 'bold',
+                                            transform: 'scaleY(1.5)'
+                                        }}>
+                                            ◀
+                                        </div>
+                                        <button
+                                            onClick={handleAddAllEmployees}
+                                            style={{
+                                                padding: '8px 12px',
+                                                background: '#3498db',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                fontSize: '11px',
+                                                cursor: 'pointer',
+                                                fontWeight: '600'
+                                            }}
+                                        >
+                                            전체<br/>추가
+                                        </button>
                                     </div>
 
                                     <div>
                                         <div style={{
-                                            fontSize: '13px',
-                                            fontWeight: '600',
-                                            marginBottom: '8px',
-                                            color: '#27ae60'
+                                            fontSize: '14px',
+                                            fontWeight: '700',
+                                            marginBottom: '10px',
+                                            color: 'white',
+                                            padding: '8px',
+                                            background: '#27ae60',
+                                            borderRadius: '4px',
+                                            textAlign: 'center'
                                         }}>
-                                            추가된 인원 ({additionalEmployees.length}명)
+                                            Selection ({additionalEmployees.length + 1}명)
                                         </div>
                                         <div style={{
-                                            maxHeight: '200px',
+                                            maxHeight: '150px',
                                             overflowY: 'auto',
                                             border: '2px solid #27ae60',
                                             borderRadius: '6px',
@@ -2504,9 +2911,21 @@
                             <button className="btn-save" onClick={handleSaveMultiple}>
                                 {isNewSchedule ? '저장' : '수정'} {additionalEmployees.length > 0 && !isNewSchedule && `(${additionalEmployees.length + 1}명)`}
                             </button>
+                            {!isNewSchedule && (
+                                <button 
+                                    className="btn-delete" 
+                                    onClick={handleRemoveMyself}
+                                    style={{background: '#ff9800'}}
+                                >
+                                    나만 제외
+                                </button>
+                            )}
                             {selectedCell.existing && selectedCell.existing.length > 0 && (
-                                <button className="btn-delete" onClick={() => onDelete(null)}>
-                                    전체 삭제
+                                <button 
+                                    className="btn-delete" 
+                                    onClick={handleDeleteAll}
+                                >
+                                    전체 제외 {selectedCell.existing[0]?.employeeIds?.length > 0 && `(${selectedCell.existing[0].employeeIds.length}명)`}
                                 </button>
                             )}
                             <button className="btn-cancel" onClick={onClose}>
