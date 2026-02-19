@@ -1583,7 +1583,7 @@
         }
 
         function ScheduleTab({ currentUser, sharedSchedules, setSharedSchedules }) {
-            const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 1));
+            const [currentDate, setCurrentDate] = useState(new Date());
             const [employees, setEmployees] = useState([]);
             
             // Firebase에서 직원 데이터 실시간 로드
@@ -2957,7 +2957,7 @@
             const [phone, setPhone] = useState('');
             const [birthday, setBirthday] = useState('');
 
-            const teams = ['경영진', '종합관리실', '인정실', 'IGC', 'GIC', '식품', 'GPC', 'RUS', 'DNA', 'UDEM'];
+            const teams = ['경영진', '종합관리실', '인정실', 'IGC', 'GIC', '식품', 'GPC', 'RUS', 'DNA', 'UDEM', '기타'];
 
             const handleSave = () => {
                 if (!name || !department) {
@@ -3302,7 +3302,7 @@
                 department: '심사팀'
             });
 
-            const teams = ['전체', '경영진', '종합관리실', '인정실', 'IGC', 'GIC', '식품', 'GPC', 'RUS', 'DNA', 'UDEM'];
+            const teams = ['전체', '경영진', '종합관리실', '인정실', 'IGC', 'GIC', '식품', 'GPC', 'RUS', 'DNA', 'UDEM', '기타'];
 
             const filteredEmployees = selectedTeam === '전체' 
                 ? employees 
